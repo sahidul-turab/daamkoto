@@ -1,0 +1,43 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets
+.env
+.env.local
+
+# Data (scraped + processed) + debug artifacts
+data/raw/*.json
+data/raw/*.csv
+data/raw/*.html
+data/processed/
+data/*.html
+data/*.json
+
+# Verification screenshots (dev artifacts)
+verify_screenshots/
+
+# Logs
+*.log
+logs/
+
+# Node / frontend build
+node_modules/
+frontend-react/node_modules/
+frontend-react/dist/
+*.tsbuildinfo
+
+# Vercel
+.vercel
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Excluded: bloated/corrupted source (9.4 MB single-line blob) — repair before committing
+scrapers/startech/enrich.py
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,230 @@
+@import "tailwindcss";
+
+/* ───────────────────────────────────────────────────────────────
+   Design tokens — premium dark theme.
+   Brand red (#e31e24) carried over from the original Streamlit app,
+   re-cast as a glowing accent on a deep near-black canvas.
+   Exposed as Tailwind theme variables so we can write e.g.
+   bg-surface, text-ink-2, border-line, ring-brand.
+   ─────────────────────────────────────────────────────────────── */
+@theme {
+  --color-brand: #f43f4b;
+  --color-brand-strong: #e31e24;
+  --color-brand-dark: #b30f15;
+
+  --color-canvas: #07070b;
+  --color-surface: #101018;
+  --color-surface-2: #16161f;
+  --color-elevated: #1c1c27;
+
+  --color-line: #26262f;
+  --color-line-2: #313140;
+
+  --color-ink: #f4f4f6;
+  --color-ink-2: #b8b8c4;
+  --color-ink-3: #8a8a99;
+  --color-ink-4: #5f5f6e;
+
+  --color-ok: #2dd4a7;
+  --color-warn: #f5b14c;
+  --color-info: #6ba6ff;
+
+  --radius-card: 16px;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+}
+
+/* ── Base ── */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Ambient aurora glow behind everything — the premium backdrop.
+   The first layer follows the cursor via --aurora-x / --aurora-y (set in App.tsx)
+   so the whole canvas feels alive and reactive. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(
+      44rem 34rem at var(--aurora-x, 50%) var(--aurora-y, 0%),
+      rgba(244, 63, 75, 0.12),
+      transparent 60%
+    ),
+    radial-gradient(60rem 40rem at 12% -8%, rgba(244, 63, 75, 0.10), transparent 60%),
+    radial-gradient(50rem 38rem at 95% 0%, rgba(107, 166, 255, 0.10), transparent 55%),
+    radial-gradient(70rem 60rem at 50% 120%, rgba(45, 212, 167, 0.06), transparent 60%);
+  transition: background-position 0.3s ease;
+  pointer-events: none;
+}
+
+/* Fine film grain — adds analog texture so flat dark panels never look "cheap".
+   Tiny inline SVG noise tiled at low opacity. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.035;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ── Scrollbar ── */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line-2);
+  border-radius: 999px;
+  border: 2px solid var(--color-canvas);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #45455a;
+}
+
+/* ───────────────────────────────────────────────────────────────
+   Reusable component classes (Tailwind @apply)
+   ─────────────────────────────────────────────────────────────── */
+/* Frosted glass panel — the core surface of the whole UI.
+   Defined as a @utility (not a @layer component) so it can be @apply-ed
+   inside .card-interactive below — Tailwind v4 only lets you @apply
+   utilities, not other component classes. */
+@utility glass {
+  @apply rounded-[--radius-card] border border-line bg-surface/70 backdrop-blur-xl;
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.04) inset,
+    0 24px 60px -32px rgba(0, 0, 0, 0.9);
+}
+
+@layer components {
+  /* A card that lifts and lights its border on hover */
+  .card-interactive {
+    @apply glass relative overflow-hidden transition-all duration-300 ease-out;
+  }
+  .card-interactive::after {
+    content: "";
+    @apply pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300;
+    background: radial-gradient(
+      40rem 20rem at var(--mx, 50%) var(--my, 0%),
+      rgba(244, 63, 75, 0.10),
+      transparent 45%
+    );
+  }
+  .card-interactive:hover {
+    @apply -translate-y-1 border-line-2;
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+      0 30px 70px -28px rgba(0, 0, 0, 0.95),
+      0 0 0 1px rgba(244, 63, 75, 0.18);
+  }
+  .card-interactive:hover::after {
+    @apply opacity-100;
+  }
+
+  /* Primary glowing brand button */
+  .btn-brand {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-brand-strong px-4 py-2.5
+           text-sm font-semibold text-white transition-all duration-200
+           hover:bg-brand disabled:cursor-not-allowed disabled:opacity-40;
+    box-shadow: 0 8px 24px -10px rgba(227, 30, 36, 0.8);
+  }
+  .btn-brand:hover:not(:disabled) {
+    box-shadow: 0 10px 30px -8px rgba(244, 63, 75, 0.9);
+  }
+
+  /* Ghost / secondary control */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line bg-surface-2
+           px-4 py-2.5 text-sm font-medium text-ink-2 transition-all duration-200
+           hover:border-line-2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  /* Form inputs / selects */
+  .field {
+    @apply w-full rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-sm text-ink
+           outline-none transition-all duration-200 placeholder:text-ink-4
+           focus:border-brand/60 focus:ring-4 focus:ring-brand/10;
+  }
+  select.field {
+    @apply cursor-pointer appearance-none bg-no-repeat pr-9;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%238a8a99' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-position: right 0.7rem center;
+  }
+
+  /* Small uppercase label */
+  .label {
+    @apply mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ink-3;
+  }
+
+  /* Chip / pill */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2 px-2.5
+           py-1 text-xs font-medium text-ink-2;
+  }
+
+  /* Hide scrollbar but keep scroll (horizontal category strip on mobile) */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Subtle entrance + shimmer animations */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.skeleton {
+  @apply relative overflow-hidden bg-surface-2;
+}
+.skeleton::after {
+  content: "";
+  @apply absolute inset-0 -translate-x-full;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.05),
+    transparent
+  );
+  animation: shimmer 1.4s infinite;
+}

@@ -1,0 +1,24 @@
+# Scraping
+playwright>=1.44.0
+
+# Cleaning & matching
+rapidfuzz>=3.9.0
+
+# Database
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.0
+
+# Backend
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+
+# Frontend
+streamlit>=1.36.0
+plotly>=5.0.0
+
+# AI chatbot (Groq free tier — OpenAI-compatible)
+groq>=1.0.0
+
+# Utilities
+python-dotenv>=1.0.0
