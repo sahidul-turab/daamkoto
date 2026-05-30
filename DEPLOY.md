@@ -1,96 +1,152 @@
-# DaamKoto — Free Deployment Guide
+# DaamKoto — Deployment & Update Guide
 
-The whole stack runs on free tiers:
+The whole stack runs on free tiers and is **live**:
 
-| Piece | Host | Cost |
+| Piece | Host | URL |
 |---|---|---|
-| Frontend (React) | **Vercel** | Free — ✅ already live at https://daamkoto.vercel.app |
-| Database (PostgreSQL) | **Neon** | Free (0.5 GB, never expires) |
-| Backend API (FastAPI) | **Render** | Free web service |
-| Scrapers (Playwright) | **Your PC** | Free — run locally, push data up |
+| Frontend (React) | **Vercel** | https://daamkoto.vercel.app |
+| Backend API (FastAPI) | **Render** | https://daamkoto-api.onrender.com |
+| Database (PostgreSQL) | **Neon** | (private connection string) |
+| Scrapers (Playwright) | **Your PC** | run locally, push data to Neon |
 
-> Why scrapers stay local: Playwright needs a headless browser that free cloud
-> tiers won't run reliably. You scrape on your PC and the data lands in Neon,
-> which the hosted API reads. The scrapers' `DATABASE_URL` just points at Neon.
-
-The code is already prepared for all of this (see commits `5036bec`, `b2bd4a0`):
-- `backend/database.py` reads a single `DATABASE_URL` when present
-- `backend/requirements.txt` — slim, API-only deps
-- `render.yaml` — Render blueprint
-- CORS already allows `*` origins
+**Key fact:** Vercel and Render both **auto-deploy on every `git push` to `main`.**
+So most updates are just a commit + push — no dashboard clicking.
 
 ---
 
-## Step 1 — Database on Neon (~5 min)
+## Updating the live site
 
-1. Sign up at **https://neon.tech** (use "Continue with GitHub").
-2. Create a project — name it `daamkoto`, pick the region closest to you
-   (Singapore is nearest to Bangladesh).
-3. On the project dashboard, copy the **connection string**. It looks like:
-   ```
-   postgresql://USER:PASSWORD@ep-xxxx-pooler.REGION.aws.neon.tech/neondb?sslmode=require
-   ```
-   Use the **pooled** ("-pooler") string. Save it — this is your `DATABASE_URL`.
-
-### Load your data into Neon
-Your local DB (19,769 products / 79,847 prices) was exported to
-`daamkoto_db_dump.sql` (gitignored — it stays on your PC).
-
-Run this from the project folder (PowerShell), pasting your Neon string:
+### Case A — Code change (frontend or backend) — *90% of updates*
+Edit + test locally, then:
 ```powershell
-$env:NEON = "postgresql://USER:PASSWORD@ep-xxxx-pooler...neon.tech/neondb?sslmode=require"
-& "C:\Program Files\PostgreSQL\17\bin\psql.exe" $env:NEON -f daamkoto_db_dump.sql
+git add -A
+git commit -m "describe your change"
+git push
 ```
-This recreates the schema + all data in Neon. (Re-run later to refresh, or just
-point the scrapers at Neon — see Step 4.)
+- Vercel rebuilds the frontend (~1 min)
+- Render rebuilds the backend (~2–3 min)
 
----
+That's the entire process. Nothing else needed.
 
-## Step 2 — Backend on Render (~5 min)
+> Reminder: frontend env vars (like `VITE_API_BASE`) are baked in at **build
+> time**. If you change one in Vercel, you must redeploy for it to take effect.
 
-1. Sign up at **https://render.com** (Continue with GitHub).
-2. **New → Blueprint** → connect the `daamkoto` repo → Render reads `render.yaml`.
-3. It creates a web service `daamkoto-api`. Before the first deploy, set the two
-   secret env vars (Render → service → **Environment**):
-   - `DATABASE_URL` = your Neon pooled connection string (from Step 1)
-   - `GROQ_API_KEY` = from https://console.groq.com (free; "Create API Key")
-4. Deploy. When it's live you'll get a URL like
-   `https://daamkoto-api.onrender.com`. Test it:
-   `https://daamkoto-api.onrender.com/health` → should return `{"status":"ok"}`.
+### Case B — New scraped data (prices changed, code unchanged)
+You scraped fresh prices into your **local** DB and want them live. Pick one:
 
-> ⚠️ Render free tier **sleeps after 15 min idle**; the first request after that
-> takes ~30–50 s to wake. Normal for free — just a cold-start delay.
-
----
-
-## Step 3 — Connect frontend → backend (~2 min)
-
-1. Vercel → project `daamkoto` → **Settings → Environment Variables**.
-2. Add: `VITE_API_BASE` = `https://daamkoto-api.onrender.com`
-   (your Render URL, **no trailing slash**). Apply to **Production**.
-3. **Deployments** tab → latest → ⋯ → **Redeploy**.
-
-Done — https://daamkoto.vercel.app now shows live products. 🎉
-
----
-
-## Step 4 — Keep data fresh (optional, ongoing)
-
-To scrape and push straight into Neon, set the same `DATABASE_URL` in your local
-`.env`, then run the pipeline as usual:
+**Simplest — scrape straight into Neon:**
 ```powershell
 .\venv\Scripts\Activate.ps1
-# In .env add: DATABASE_URL=postgresql://...neon.tech/neondb?sslmode=require
-python scheduler.py --once          # one sweep of all categories
+# Temporarily add to .env:  DATABASE_URL=<neon pooled connection string>
+python scheduler.py --once
+# Remove the DATABASE_URL line from .env to go back to writing the local DB.
 ```
-The loader writes to whatever `DATABASE_URL` points at. Remove that line from
-`.env` to go back to writing your local DB.
+
+**Or — full refresh (export local → reload Neon):**
+```powershell
+$PG = "C:\Program Files\PostgreSQL\17\bin"
+& "$PG\pg_dump.exe" -h localhost -U postgres -d pc_comparison `
+    --no-owner --no-privileges -f daamkoto_db_dump.sql
+& "$PG\psql.exe" "<neon-url>" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+& "$PG\psql.exe" "<neon-url>" -f daamkoto_db_dump.sql
+```
+
+After loading data, refresh the materialized view so current prices update:
+```powershell
+& "$PG\psql.exe" "<neon-url>" -c "REFRESH MATERIALIZED VIEW mv_current_prices;"
+```
+
+### Case C — Database schema change (new table / column / migration)
+1. Run the migration against Neon:
+   ```powershell
+   & "C:\Program Files\PostgreSQL\17\bin\psql.exe" "<neon-url>" -f database/migration_xxx.sql
+   ```
+2. Push the code that uses it (Case A).
 
 ---
 
-## Recap of credentials you'll create
-- Neon account → `DATABASE_URL`
-- Groq account → `GROQ_API_KEY`
-- (GitHub + Vercel already done)
+## How Claude can help (just ask in a session)
 
-All free, no card required.
+Vercel/Render auto-deploy on push, so Claude can do almost everything from the
+CLI. Typical requests:
+
+| You say | Claude does |
+|---|---|
+| "Deploy my changes" | Reviews the local diff, commits, pushes (triggers Vercel + Render), then verifies the live site |
+| "Push new prices to live" | Syncs local DB → Neon, refreshes the materialized view, checks counts |
+| "I added a migration" | Applies it to Neon, pushes the code, smoke-tests live endpoints |
+| "Is the live site OK?" | Runs health + data checks against the live URLs and reports |
+
+Claude **cannot** click buttons in the Vercel/Render dashboards or log into your
+accounts — but with auto-deploy it rarely needs to.
+
+---
+
+## Health checks (verify the live chain)
+```powershell
+# Backend up? (cold start can take ~30–50s on Render free tier)
+Invoke-RestMethod "https://daamkoto-api.onrender.com/health"          # {"status":"ok"}
+
+# Live data flowing?
+(Invoke-RestMethod "https://daamkoto-api.onrender.com/products?category=GPU").total
+
+# Frontend serving DaamKoto?
+(Invoke-WebRequest "https://daamkoto.vercel.app" -UseBasicParsing).Content -match "<title>DaamKoto"
+```
+
+> ⚠️ Render free tier **sleeps after ~15 min idle**; the first request wakes it
+> (~30–50s). Normal — not a bug.
+
+---
+
+## Environment variables (where secrets live)
+
+**Render** (`daamkoto-api` → Environment):
+- `DATABASE_URL` — Neon pooled connection string (`...-pooler...?sslmode=require`)
+- `GROQ_API_KEY` — from https://console.groq.com (free; chatbot LLM)
+- `FRONTEND_ORIGIN` — `https://daamkoto.vercel.app` (set via render.yaml)
+
+**Vercel** (project → Settings → Environment Variables):
+- `VITE_API_BASE` — `https://daamkoto-api.onrender.com` (no trailing slash)
+
+**Local** (`.env`, gitignored):
+- `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` — local Postgres
+- `GROQ_API_KEY` — for running the chatbot locally
+- `DATABASE_URL` — *optional*, only when you want local scrapers to write to Neon
+
+> `backend/database.py` prefers `DATABASE_URL` when set, else falls back to the
+> discrete `DB_*` vars. So the same code runs locally and in the cloud.
+
+---
+
+## Initial setup (already done — for reference / rebuilding)
+
+<details>
+<summary>One-time provisioning steps</summary>
+
+**Neon (database)**
+1. Sign up at https://neon.tech (Continue with GitHub).
+2. Create project `daamkoto`, region Singapore (`ap-southeast-1`, nearest to BD).
+3. Copy the **pooled** connection string → this is `DATABASE_URL`.
+4. Load data: `psql "<neon-url>" -f daamkoto_db_dump.sql`
+5. `ALTER ROLE neondb_owner SET search_path TO public;` (so the API finds tables)
+
+**Render (backend)**
+1. Sign up at https://render.com (Continue with GitHub).
+2. New → Blueprint → pick the `daamkoto` repo (reads `render.yaml`) → Apply.
+3. Set `DATABASE_URL` and `GROQ_API_KEY` in the service's Environment tab.
+4. Test `https://daamkoto-api.onrender.com/health`.
+
+**Vercel (frontend)**
+1. Import the repo; set **Root Directory = `frontend-react`**, Framework = Vite.
+2. Add env var `VITE_API_BASE = https://daamkoto-api.onrender.com`.
+3. Redeploy.
+</details>
+
+---
+
+## Security note
+If a `DATABASE_URL` / API key is ever exposed (e.g. pasted in chat), rotate it:
+- **Neon**: dashboard → Settings/Roles → Reset password → update `DATABASE_URL`
+  in Render → it auto-redeploys.
+- **Groq**: console → API Keys → revoke + create → update `GROQ_API_KEY` in Render.
