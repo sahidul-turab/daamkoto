@@ -35,9 +35,6 @@ frontend-react/dist/
 # Local Claude Code settings
 .claude/settings.local.json
 
-# Excluded: bloated/corrupted source (9.4 MB single-line blob) — repair before committing
-scrapers/startech/enrich.py
-
 # OS
 .DS_Store
 Thumbs.db

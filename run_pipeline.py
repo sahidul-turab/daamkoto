@@ -41,7 +41,12 @@ ALL_RETAILERS = [
 ]
 
 
-def run(cmd: list[str], label: str) -> None:
+def run(cmd: list[str], label: str, fatal: bool = True) -> bool:
+    """
+    Run a pipeline step. Returns True on success, False on failure.
+    If fatal=True (default for match/load steps), exits the process on failure.
+    If fatal=False (scraper/normalize steps), prints a warning and returns False.
+    """
     python = sys.executable
     full_cmd = [python] + cmd
     print(f"\n{'='*60}")
@@ -50,8 +55,13 @@ def run(cmd: list[str], label: str) -> None:
     print(f"{'='*60}")
     result = subprocess.run(full_cmd)
     if result.returncode != 0:
-        print(f"\nPipeline aborted: '{label}' exited with code {result.returncode}.")
-        sys.exit(result.returncode)
+        if fatal:
+            print(f"\nPipeline aborted: '{label}' exited with code {result.returncode}.")
+            sys.exit(result.returncode)
+        else:
+            print(f"\n  [warn] '{label}' failed (code {result.returncode}) — skipping this retailer.")
+            return False
+    return True
 
 
 def latest(pattern: str, required: bool = True) -> Path | None:
@@ -69,7 +79,8 @@ def latest(pattern: str, required: bool = True) -> Path | None:
 def scrape_and_normalize(retailer: str, cat: str, skip_scrape: bool, limit: int | None) -> Path | None:
     """
     Run scrape (optional) + normalize for one retailer.
-    Returns the raw file path used, or None if skipped.
+    Returns the raw file path used, or None if skipped/failed.
+    Scraper failures are non-fatal — the category continues with other retailers.
     """
 
     scraper_path = Path(f"scrapers/{retailer}/scrape_{cat}.py")
@@ -79,37 +90,42 @@ def scrape_and_normalize(retailer: str, cat: str, skip_scrape: bool, limit: int 
             if not scraper_path.exists():
                 print(f"\n  [skip] No scraper for {retailer} {cat.upper()} — {scraper_path} not found.")
                 return None
-            run([f"scrapers/startech/scrape_{cat}.py", "--save"],
-                f"Scrape StarTech {cat.upper()}")
+            ok = run([f"scrapers/startech/scrape_{cat}.py", "--save"],
+                     f"Scrape StarTech {cat.upper()}", fatal=False)
+            if not ok:
+                return None
             if cat == "ram":
                 enrich_cmd = ["scrapers/startech/enrich.py", "--only-priced"]
                 if limit:
                     enrich_cmd += ["--limit", str(limit)]
-                run(enrich_cmd, "Enrich StarTech RAM (detail pages)")
+                run(enrich_cmd, "Enrich StarTech RAM (detail pages)", fatal=False)
 
         if cat == "ram":
-            raw = latest("startech_ram_enriched_*.json")
+            raw = latest("startech_ram_enriched_*.json", required=False)
         else:
-            raw = latest(f"startech_{cat}_*.json")
+            raw = latest(f"startech_{cat}_*.json", required=False)
 
     else:
         if not skip_scrape:
             if not scraper_path.exists():
                 print(f"\n  [skip] No scraper for {retailer} {cat.upper()} — {scraper_path} not found.")
                 return None
-            run([f"scrapers/{retailer}/scrape_{cat}.py", "--save"],
-                f"Scrape {retailer.title()} {cat.upper()}")
-            raw = latest(f"{retailer}_{cat}_*.json")
+            ok = run([f"scrapers/{retailer}/scrape_{cat}.py", "--save"],
+                     f"Scrape {retailer.title()} {cat.upper()}", fatal=False)
+            if not ok:
+                return None
+            raw = latest(f"{retailer}_{cat}_*.json", required=False)
         else:
             raw = latest(f"{retailer}_{cat}_*.json", required=False)
 
     if raw is None:
-        print(f"\n  [skip] No {retailer} {cat.upper()} raw file — run scraper first.")
+        print(f"\n  [skip] No {retailer} {cat.upper()} raw file — skipping.")
         return None
 
     run(
         ["cleaning/normalize.py", "--input", str(raw), "--category", cat],
         f"Normalize {retailer.title()} {cat.upper()}  ({raw.name})",
+        fatal=False,  # normalize failure skips this retailer, doesn't abort the category
     )
     return raw
 

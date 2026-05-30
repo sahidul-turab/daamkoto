@@ -1,0 +1,22 @@
+# Render Blueprint — deploys the DaamKoto FastAPI backend on the free tier.
+# Import this repo at https://render.com → New → Blueprint.
+#
+# After it provisions, set the two secret env vars (marked sync:false) in the
+# Render dashboard: DATABASE_URL (from Neon) and ANTHROPIC_API_KEY.
+services:
+  - type: web
+    name: daamkoto-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: FRONTEND_ORIGIN
+        value: https://daamkoto.vercel.app
+      - key: DATABASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
