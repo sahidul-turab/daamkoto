@@ -2,7 +2,9 @@
 # Import this repo at https://render.com → New → Blueprint.
 #
 # After it provisions, set the two secret env vars (marked sync:false) in the
-# Render dashboard: DATABASE_URL (from Neon) and ANTHROPIC_API_KEY.
+# Render dashboard:
+#   DATABASE_URL    — from Neon (the pooled connection string, ?sslmode=require)
+#   GROQ_API_KEY    — from https://console.groq.com (free)
 services:
   - type: web
     name: daamkoto-api
@@ -18,5 +20,5 @@ services:
         value: https://daamkoto.vercel.app
       - key: DATABASE_URL
         sync: false
-      - key: ANTHROPIC_API_KEY
+      - key: GROQ_API_KEY
         sync: false

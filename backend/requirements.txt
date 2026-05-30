@@ -1,8 +1,9 @@
 # Lightweight deps for the deployed API service (Render free tier).
-# Excludes scraping/cleaning libs (playwright, rapidfuzz, bs4, lxml) — the
-# hosted API only reads the database; scraping runs locally.
-psycopg2-binary
-python-dotenv
-fastapi
-uvicorn[standard]
-anthropic
+# Excludes scraping/cleaning libs (playwright, rapidfuzz) — the hosted API only
+# reads the database; scraping runs locally on your PC.
+psycopg2-binary>=2.9.9
+python-dotenv>=1.0.0
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+groq>=1.0.0

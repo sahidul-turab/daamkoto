@@ -27,15 +27,22 @@ _pool: ThreadedConnectionPool | None = None
 
 def init_pool(min_conn: int = 1, max_conn: int = 10) -> None:
     global _pool
-    _pool = ThreadedConnectionPool(
-        min_conn,
-        max_conn,
-        host=os.getenv("DB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", "5432")),
-        dbname=os.getenv("DB_NAME", "pc_comparison"),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD", ""),
-    )
+    # Cloud hosts (Neon, Render, Supabase, Railway) expose a single
+    # DATABASE_URL connection string. Prefer it when present; otherwise fall
+    # back to the discrete DB_* vars used for local development.
+    dsn = os.getenv("DATABASE_URL")
+    if dsn:
+        _pool = ThreadedConnectionPool(min_conn, max_conn, dsn=dsn)
+    else:
+        _pool = ThreadedConnectionPool(
+            min_conn,
+            max_conn,
+            host=os.getenv("DB_HOST", "localhost"),
+            port=int(os.getenv("DB_PORT", "5432")),
+            dbname=os.getenv("DB_NAME", "pc_comparison"),
+            user=os.getenv("DB_USER", "postgres"),
+            password=os.getenv("DB_PASSWORD", ""),
+        )
 
 
 def close_pool() -> None:
