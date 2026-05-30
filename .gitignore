@@ -32,6 +32,10 @@ frontend-react/dist/
 # Vercel
 .vercel
 
+# Database dumps (data, not code — load these into Neon manually)
+*_db_dump.sql
+*.dump
+
 # Local Claude Code settings
 .claude/settings.local.json
 
