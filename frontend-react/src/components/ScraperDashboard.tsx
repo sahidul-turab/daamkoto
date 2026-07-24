@@ -14,6 +14,7 @@ const ALL_CATEGORIES = [
   "ram", "laptop_ram", "gpu", "processor", "motherboard",
   "ssd", "portable_ssd", "hdd", "portable_hdd",
   "psu", "cooler", "casing_cooler", "casing",
+  "monitor", "keyboard", "mouse", "headset", "ups",
 ];
 
 const ALL_RETAILERS = [

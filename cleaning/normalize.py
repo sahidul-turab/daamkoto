@@ -1498,6 +1498,310 @@ def clean_casing_cooler_record(raw: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Peripheral helpers — keyboard, mouse, headset, UPS
+#
+# Peripherals carry far less structured data than components. A RAM listing
+# reliably states capacity and speed; a mouse listing may say nothing beyond
+# "Gaming Mouse". So these extractors return None freely rather than guessing,
+# and the match keys fall back to the normalised name — over-eager extraction
+# would merge genuinely different products into one.
+# ---------------------------------------------------------------------------
+
+_PERIPHERAL_BRANDS = [
+    "Logitech", "Razer", "Corsair", "SteelSeries", "HyperX", "A4Tech", "Fantech",
+    "Redragon", "Gamdias", "Havit", "Rapoo", "Microsoft", "Dell", "HP", "Asus",
+    "MSI", "Cooler Master", "Keychron", "Aula", "Ajazz", "Royal Kludge", "RK",
+    "Motospeed", "Delux", "Genius", "Micropack", "Value-Top", "Walton", "Xiaomi",
+    "Edifier", "JBL", "Sony", "Anker", "Baseus", "Remax", "Awei", "Boya",
+    "Audio-Technica", "Sennheiser", "Beats", "1stPlayer", "Marvo", "Bloody",
+    "Zebronics", "Lenovo", "Acer", "Gigabyte", "Thermaltake", "Antec", "Deepcool",
+    "APC", "Apollo", "Power Guard", "Digital X", "MaxGreen", "Prolink", "Marsriva",
+    "Powerpac", "Kstar", "Must", "Ensysco", "Ups Bd",
+    "MageGee", "MCHOSE", "Attack Shark", "Darmoshark", "VGN", "Machenike",
+    "Jedel", "Golden Field", "Geezer", "Gamesir", "8BitDo", "Dareu", "Leobog",
+    "Zifriend", "Womier", "Epomaker", "Akko", "Varmilo", "Ducky", "Glorious",
+    "Pulsar", "Lamzu", "Waizowl", "Fifine", "EKSA", "Boya", "Emeet", "Awei",
+    "Joyroom", "UGREEN", "Oraimo", "Realme", "OnePlus", "Samsung", "Nothing",
+]
+
+
+def extract_peripheral_brand(name: str) -> str | None:
+    """First brand whose name appears as a whole word. Longest names first so
+    'Cooler Master' is not shadowed by a shorter partial match."""
+    for brand in sorted(_PERIPHERAL_BRANDS, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(brand)}\b", name, re.IGNORECASE):
+            return brand
+    return None
+
+
+def extract_connectivity(name: str) -> str | None:
+    n = name.lower()
+    if "tri-mode" in n or "tri mode" in n or "3 mode" in n:
+        return "Tri-Mode"
+    if "bluetooth" in n and ("2.4" in n or "wireless" in n):
+        return "Dual Wireless"
+    if "bluetooth" in n:
+        return "Bluetooth"
+    if "wireless" in n or "2.4g" in n or "2.4ghz" in n:
+        return "Wireless"
+    if "wired" in n or "usb" in n or "type-c" in n:
+        return "Wired"
+    return None
+
+
+def detect_mechanical(name: str) -> bool:
+    return bool(re.search(r"\bmechanical\b|\bhot[\s-]?swap", name, re.IGNORECASE))
+
+
+def extract_switch_type(name: str) -> str | None:
+    m = re.search(r"\b(blue|red|brown|black|silver|green|yellow|optical|magnetic)\s+switch",
+                  name, re.IGNORECASE)
+    if m:
+        return m.group(1).title()
+    if re.search(r"\bmembrane\b", name, re.IGNORECASE):
+        return "Membrane"
+    if re.search(r"\bhall\s*effect|\bmagnetic\b", name, re.IGNORECASE):
+        return "Magnetic"
+    return None
+
+
+def extract_keyboard_layout(name: str) -> str | None:
+    # Match the common tenkeyless / compact sizes by key count or shorthand.
+    m = re.search(r"\b(60|65|68|75|84|87|96|98|104|108)\s*%?\s*(?:keys?)?\b", name)
+    if m and re.search(r"%|keys?\b", name, re.IGNORECASE):
+        return f"{m.group(1)}%"
+    if re.search(r"\btkl\b|tenkeyless", name, re.IGNORECASE):
+        return "TKL"
+    if re.search(r"\bfull[\s-]?size\b", name, re.IGNORECASE):
+        return "Full-size"
+    return None
+
+
+def extract_dpi(name: str) -> str | None:
+    m = re.search(r"(\d{3,6})\s*dpi\b", name, re.IGNORECASE)
+    return f"{int(m.group(1))} DPI" if m else None
+
+
+def extract_headset_form(name: str) -> str | None:
+    n = name.lower()
+    if "earbud" in n or "tws" in n or "true wireless" in n:
+        return "Earbuds"
+    if "in-ear" in n or "in ear" in n or "earphone" in n:
+        return "In-Ear"
+    if "on-ear" in n or "on ear" in n:
+        return "On-Ear"
+    if "over-ear" in n or "over ear" in n or "headphone" in n or "headset" in n:
+        return "Over-Ear"
+    return None
+
+
+def detect_mic(name: str) -> bool:
+    return bool(re.search(r"\bmic\b|microphone|\bheadset\b", name, re.IGNORECASE))
+
+
+def detect_noise_cancelling(name: str) -> bool:
+    return bool(re.search(r"\banc\b|noise[\s-]?cancel", name, re.IGNORECASE))
+
+
+def extract_ups_va(name: str) -> str | None:
+    """Capacity in VA. Also accepts kVA and normalises it."""
+    m = re.search(r"(\d+(?:\.\d+)?)\s*kva\b", name, re.IGNORECASE)
+    if m:
+        return f"{int(float(m.group(1)) * 1000)}VA"
+    m = re.search(r"(\d{3,6})\s*va\b", name, re.IGNORECASE)
+    if m:
+        return f"{int(m.group(1))}VA"
+    return None
+
+
+def extract_ups_type(name: str) -> str | None:
+    n = name.lower()
+    if "online" in n:
+        return "Online"
+    if "line interactive" in n or "line-interactive" in n:
+        return "Line Interactive"
+    if "offline" in n:
+        return "Offline"
+    if "mini ups" in n or "dc ups" in n:
+        return "Mini UPS"
+    return None
+
+
+def extract_ups_backup(name: str) -> str | None:
+    m = re.search(r"(\d+)\s*(?:min|minute)", name, re.IGNORECASE)
+    if m:
+        return f"{m.group(1)} min"
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:hour|hr)\b", name, re.IGNORECASE)
+    return f"{m.group(1)} hr" if m else None
+
+
+_MODEL_STOPWORDS = {
+    "usb", "rgb", "led", "pc", "bd", "tws", "anc", "dpi", "va", "kva", "hz",
+    "ghz", "mm", "type", "typec", "usbc", "2in1", "3in1", "v2", "v3", "pro",
+    "ddr4", "ddr5", "aa", "aaa",
+}
+
+
+def extract_model_token(name: str, brand: str | None = None) -> str | None:
+    """A model designation like KR-85, V8M, RK84, G502, WH-1000XM5.
+
+    This is what actually distinguishes one peripheral from another. Brand plus
+    specs is not enough on its own: every wired A4Tech keyboard would otherwise
+    key to 'a4tech_wired' and the matcher would fold dozens of distinct products
+    into one. Requires both a letter and a digit so plain words and bare numbers
+    ('Gaming', '2024') are ignored.
+
+    The brand is excluded explicitly - several brand names contain digits
+    (A4Tech, 1stPlayer, 8BitDo) and would otherwise be picked as their own model.
+    """
+    skip = set(_MODEL_STOPWORDS)
+    if brand:
+        skip.add(brand.replace(" ", "").replace("-", "").lower())
+
+    for tok in re.findall(r"\b[A-Za-z0-9][A-Za-z0-9\-]{1,15}\b", name):
+        bare = tok.replace("-", "").lower()
+        if bare in skip or len(bare) < 2:
+            continue
+        if re.search(r"[A-Za-z]", tok) and re.search(r"\d", tok):
+            # Skip pure measurements: 165Hz, 27inch, 650VA, 25600DPI.
+            if re.fullmatch(r"\d+(\.\d+)?(hz|inch|in|va|kva|dpi|mm|w|k|gb|tb|ms)",
+                            bare, re.IGNORECASE):
+                continue
+            return tok.upper()
+    return None
+
+
+def _peripheral_match_key(brand: str | None, norm_name: str, *parts: str | None) -> str:
+    """Brand + model + specifics, falling back to the whole name.
+
+    The model token is what keeps distinct products apart, so without one we key
+    on the full name rather than risk merging. The matcher's fuzzy pass still
+    unifies genuine duplicates across retailers.
+    """
+    model = extract_model_token(norm_name, brand)
+    if brand and model:
+        bits = [brand, model, *[p for p in parts if p]]
+        return "_".join(b.lower().replace(" ", "") for b in bits)
+    return re.sub(r"[^a-z0-9]+", "_", norm_name.lower()).strip("_")
+
+
+def clean_keyboard_record(raw: dict) -> dict:
+    name = raw.get("name", "")
+    norm_name = normalize_name(name)
+    brand = extract_peripheral_brand(norm_name)
+    connectivity = extract_connectivity(norm_name)
+    switch_type = extract_switch_type(norm_name)
+    layout = extract_keyboard_layout(norm_name)
+    mechanical = detect_mechanical(norm_name)
+    rgb = detect_rgb(norm_name)
+
+    specs = {
+        "connectivity": connectivity,
+        "switch_type":  switch_type,
+        "layout":       layout,
+        "mechanical":   mechanical,
+        "rgb":          rgb,
+    }
+    return {
+        "raw_name": name, "mpn": None,
+        "price_bdt": raw.get("price_bdt"), "in_stock": raw.get("in_stock"),
+        "product_url": raw.get("product_url"), "source": raw.get("source"),
+        "scraped_at": raw.get("scraped_at"),
+        "pc_bundle_only": bool(raw.get("pc_bundle_only", False)),
+        "name": norm_name, "brand": brand,
+        "capacity": layout, "generation": switch_type,
+        "speed": connectivity, "latency": None, "form_factor": "Keyboard",
+        "match_key": _peripheral_match_key(brand, norm_name, layout, switch_type, connectivity),
+        "specs": specs,
+    }
+
+
+def clean_mouse_record(raw: dict) -> dict:
+    name = raw.get("name", "")
+    norm_name = normalize_name(name)
+    brand = extract_peripheral_brand(norm_name)
+    connectivity = extract_connectivity(norm_name)
+    dpi = extract_dpi(norm_name)
+    rgb = detect_rgb(norm_name)
+
+    specs = {
+        "connectivity": connectivity,
+        "dpi":          dpi,
+        "rgb":          rgb,
+    }
+    return {
+        "raw_name": name, "mpn": None,
+        "price_bdt": raw.get("price_bdt"), "in_stock": raw.get("in_stock"),
+        "product_url": raw.get("product_url"), "source": raw.get("source"),
+        "scraped_at": raw.get("scraped_at"),
+        "pc_bundle_only": bool(raw.get("pc_bundle_only", False)),
+        "name": norm_name, "brand": brand,
+        "capacity": dpi, "generation": None,
+        "speed": connectivity, "latency": None, "form_factor": "Mouse",
+        "match_key": _peripheral_match_key(brand, norm_name, dpi, connectivity),
+        "specs": specs,
+    }
+
+
+def clean_headset_record(raw: dict) -> dict:
+    name = raw.get("name", "")
+    norm_name = normalize_name(name)
+    brand = extract_peripheral_brand(norm_name)
+    connectivity = extract_connectivity(norm_name)
+    form = extract_headset_form(norm_name)
+    mic = detect_mic(norm_name)
+    anc = detect_noise_cancelling(norm_name)
+    rgb = detect_rgb(norm_name)
+
+    specs = {
+        "connectivity":     connectivity,
+        "headset_form":     form,
+        "microphone":       mic,
+        "noise_cancelling": anc,
+        "rgb":              rgb,
+    }
+    return {
+        "raw_name": name, "mpn": None,
+        "price_bdt": raw.get("price_bdt"), "in_stock": raw.get("in_stock"),
+        "product_url": raw.get("product_url"), "source": raw.get("source"),
+        "scraped_at": raw.get("scraped_at"),
+        "pc_bundle_only": bool(raw.get("pc_bundle_only", False)),
+        "name": norm_name, "brand": brand,
+        "capacity": form, "generation": None,
+        "speed": connectivity, "latency": None, "form_factor": form or "Headset",
+        "match_key": _peripheral_match_key(brand, norm_name, form, connectivity),
+        "specs": specs,
+    }
+
+
+def clean_ups_record(raw: dict) -> dict:
+    name = raw.get("name", "")
+    norm_name = normalize_name(name)
+    brand = extract_peripheral_brand(norm_name)
+    va = extract_ups_va(norm_name)
+    ups_type = extract_ups_type(norm_name)
+    backup = extract_ups_backup(norm_name)
+
+    specs = {
+        "va_rating":   va,
+        "ups_type":    ups_type,
+        "backup_time": backup,
+    }
+    return {
+        "raw_name": name, "mpn": None,
+        "price_bdt": raw.get("price_bdt"), "in_stock": raw.get("in_stock"),
+        "product_url": raw.get("product_url"), "source": raw.get("source"),
+        "scraped_at": raw.get("scraped_at"),
+        "pc_bundle_only": bool(raw.get("pc_bundle_only", False)),
+        "name": norm_name, "brand": brand,
+        "capacity": va, "generation": ups_type,
+        "speed": backup, "latency": None, "form_factor": "UPS",
+        "match_key": _peripheral_match_key(brand, norm_name, va, ups_type),
+        "specs": specs,
+    }
+
+
+# ---------------------------------------------------------------------------
 # ODD (Optical Disk Drive) helpers
 # ---------------------------------------------------------------------------
 
@@ -1713,7 +2017,8 @@ def main():
     parser.add_argument("--category",
                         choices=["ram", "laptop_ram", "gpu", "processor", "motherboard",
                                  "ssd", "portable_ssd", "hdd", "portable_hdd",
-                                 "psu", "cooler", "casing_cooler", "casing", "odd", "monitor"],
+                                 "psu", "cooler", "casing_cooler", "casing", "odd", "monitor",
+                                 "keyboard", "mouse", "headset", "ups"],
                         default=None,
                         help="Product category — inferred from filename if omitted")
     args = parser.parse_args()
@@ -1743,6 +2048,10 @@ def main():
         "odd":           clean_odd_record,
         "monitor":       clean_monitor_record,
         "laptop_ram":    clean_laptop_ram_record,
+        "keyboard":      clean_keyboard_record,
+        "mouse":         clean_mouse_record,
+        "headset":       clean_headset_record,
+        "ups":           clean_ups_record,
     }
     cleaner = CLEANERS.get(category, clean_record)
 

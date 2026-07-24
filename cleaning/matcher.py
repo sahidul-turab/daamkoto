@@ -61,8 +61,10 @@ def extract_model_series(name: str, brand: str) -> str:
              brand="Kingston"  →  "FURY Beast"
     This string is what we fuzzy-match across retailers.
     """
-    # Remove brand prefix (case-insensitive)
-    s = re.sub(r"(?i)^" + re.escape(brand), "", name).strip()
+    # Remove brand prefix (case-insensitive). Brand is genuinely unknown for
+    # many peripherals - the listing may name no recognised maker at all - so
+    # treat None as "no prefix to strip" rather than letting re.escape crash.
+    s = re.sub(r"(?i)^" + re.escape(brand or ""), "", name).strip()
     # Remove spec tokens
     s = _SPEC_RE.sub(" ", s)
     # Collapse whitespace and trailing punctuation
@@ -374,7 +376,8 @@ def main():
     parser.add_argument("--category",
                         choices=["ram", "laptop_ram", "gpu", "processor", "motherboard",
                                  "ssd", "portable_ssd", "hdd", "portable_hdd",
-                                 "psu", "cooler", "casing_cooler", "casing", "odd", "monitor"],
+                                 "psu", "cooler", "casing_cooler", "casing", "odd", "monitor",
+                                 "keyboard", "mouse", "headset", "ups"],
                         default="ram",
                         help="Product category — determines which clean files to load (default: ram)")
     parser.add_argument("--threshold", type=int, default=SIMILARITY_THRESHOLD,

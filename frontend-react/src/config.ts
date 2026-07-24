@@ -146,6 +146,72 @@ export const CATEGORIES: CategoryDef[] = [
       bool("front_usb_c", "Front USB Type-C"),
     ],
   },
+  {
+    label: "Monitor", db: "MONITOR", icon: "Monitor", filters: [
+      sel("screen_size", "Screen Size", "screen_size", [
+        '19"', '21.5"', '22"', '23.8"', '24"', '27"', '32"', '34"',
+      ]),
+      sel("resolution", "Resolution", "resolution", [
+        "1366x768", "1920x1080", "2560x1440", "3440x1440", "3840x2160",
+      ]),
+      sel("refresh_rate", "Refresh Rate", "refresh_rate", [
+        "60Hz", "75Hz", "100Hz", "120Hz", "144Hz", "165Hz", "180Hz", "240Hz",
+      ]),
+      sel("panel_type", "Panel Type", "panel_type", ["IPS", "VA", "TN", "OLED"]),
+      bool("curved", "Curved"),
+      bool("hdr", "HDR"),
+    ],
+  },
+  {
+    label: "Keyboard", db: "KEYBOARD", icon: "Keyboard", filters: [
+      sel("connectivity", "Connectivity", "connectivity", [
+        "Wired", "Wireless", "Bluetooth", "Dual Wireless", "Tri-Mode",
+      ]),
+      sel("switch_type", "Switch Type", "switch_type", [
+        "Blue", "Red", "Brown", "Black", "Optical", "Magnetic", "Membrane",
+      ]),
+      sel("layout", "Layout", "layout", ["60%", "65%", "75%", "TKL", "Full-size"]),
+      bool("mechanical", "Mechanical"),
+      bool("rgb", "RGB Backlit"),
+    ],
+  },
+  {
+    label: "Mouse", db: "MOUSE", icon: "Mouse", filters: [
+      sel("connectivity", "Connectivity", "connectivity", [
+        "Wired", "Wireless", "Bluetooth", "Dual Wireless", "Tri-Mode",
+      ]),
+      sel("dpi", "DPI", "dpi", [
+        "800 DPI", "1600 DPI", "6400 DPI", "12000 DPI", "16000 DPI", "26000 DPI",
+      ]),
+      bool("rgb", "RGB"),
+    ],
+  },
+  {
+    label: "Headphone", db: "HEADSET", icon: "Headphones", filters: [
+      sel("headset_form", "Type", "headset_form", [
+        "Over-Ear", "On-Ear", "In-Ear", "Earbuds",
+      ]),
+      sel("connectivity", "Connectivity", "connectivity", [
+        "Wired", "Wireless", "Bluetooth", "Dual Wireless",
+      ]),
+      bool("microphone", "Has Microphone"),
+      bool("noise_cancelling", "Noise Cancelling"),
+      bool("rgb", "RGB"),
+    ],
+  },
+  {
+    label: "UPS", db: "UPS", icon: "BatteryCharging", filters: [
+      sel("va_rating", "Capacity (VA)", "va_rating", [
+        "600VA", "650VA", "1000VA", "1200VA", "2000VA", "3000VA",
+      ]),
+      sel("ups_type", "UPS Type", "ups_type", [
+        "Offline", "Line Interactive", "Online", "Mini UPS",
+      ]),
+      sel("backup_time", "Backup Time", "backup_time", [
+        "15 min", "20 min", "30 min", "1 hr",
+      ]),
+    ],
+  },
 ];
 
 export const SORT_OPTIONS: { label: string; value: string }[] = [

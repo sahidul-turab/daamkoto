@@ -38,6 +38,11 @@ _ALLOWED_SPEC_KEYS = {
     "side_panel", "color", "psu_support", "front_usb_c",
     # Monitor
     "screen_size", "resolution", "refresh_rate", "panel_type", "response_time", "curved", "hdr",
+    # Peripherals — keyboard / mouse / headset
+    "connectivity", "switch_type", "layout", "mechanical", "dpi",
+    "headset_form", "microphone", "noise_cancelling",
+    # UPS
+    "va_rating", "ups_type", "backup_time",
 }
 
 # ---------------------------------------------------------------------------

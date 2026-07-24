@@ -562,6 +562,19 @@ def list_products(
     resolution: str | None = Query(None, description="[Monitor] e.g. 1920x1080, 2560x1440, 3840x2160"),
     refresh_rate: str | None = Query(None, description="[Monitor] e.g. 60Hz, 144Hz, 240Hz"),
     panel_type: str | None = Query(None, description="[Monitor] IPS, VA, TN, OLED"),
+    # ── Peripheral filters ───────────────────────────────────────────────────
+    connectivity: str | None = Query(None, description="[Keyboard/Mouse/Headset] Wired, Wireless, Bluetooth, Tri-Mode"),
+    switch_type: str | None = Query(None, description="[Keyboard] Blue, Red, Brown, Optical, Magnetic, Membrane"),
+    layout: str | None = Query(None, description="[Keyboard] 60%, 65%, 75%, TKL, Full-size"),
+    mechanical: bool | None = Query(None, description="[Keyboard] Mechanical switches"),
+    dpi: str | None = Query(None, description="[Mouse] e.g. 16000 DPI, 26000 DPI"),
+    headset_form: str | None = Query(None, description="[Headset] Over-Ear, On-Ear, In-Ear, Earbuds"),
+    microphone: bool | None = Query(None, description="[Headset] Has a microphone"),
+    noise_cancelling: bool | None = Query(None, description="[Headset] Active noise cancelling"),
+    # ── UPS filters ──────────────────────────────────────────────────────────
+    va_rating: str | None = Query(None, description="[UPS] e.g. 650VA, 1200VA, 2000VA"),
+    ups_type: str | None = Query(None, description="[UPS] Offline, Line Interactive, Online, Mini UPS"),
+    backup_time: str | None = Query(None, description="[UPS] e.g. 20 min, 1 hr"),
 ):
     """
     Search and filter products. Returns current cheapest price per product across all retailers.
@@ -611,6 +624,17 @@ def list_products(
         ("resolution", resolution),
         ("refresh_rate", refresh_rate),
         ("panel_type", panel_type),
+        ("connectivity", connectivity),
+        ("switch_type", switch_type),
+        ("layout", layout),
+        ("mechanical", mechanical),
+        ("dpi", dpi),
+        ("headset_form", headset_form),
+        ("microphone", microphone),
+        ("noise_cancelling", noise_cancelling),
+        ("va_rating", va_rating),
+        ("ups_type", ups_type),
+        ("backup_time", backup_time),
     ]:
         if value is not None:
             specs_filter[key_name] = value

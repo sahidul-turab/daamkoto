@@ -50,4 +50,69 @@ CATEGORY_PATHS = {
         # computersource: no monitor listing found - /monitor, /monitors,
         # /desktop-monitor and /led-monitor all 404. Revisit.
     },
+
+    # Ryans nests these under a section rather than the category name, and only
+    # its "All Brands" link is the full listing - every other entry in the menu
+    # is one brand. Hence desktop-component-* / audio-video-* here.
+    "keyboard": {
+        "startech":       "/accessories/keyboards",
+        "ryans":          "/category/desktop-component-keyboard",
+        "techland":       "/accessories/computer-keyboard",
+        "potakait":       "/keyboards",
+        "ucc":            "/keyboards",
+        "ultratech":      "/keyboard",
+        "binarylogic":    "/keyboard-mouse",
+        "skyland":        "/accessories/keyboard",
+        "creatus":        "/keyboard",
+        "selltech":       "/Keyboard",
+        "computersource": "/keyboard",
+        "trusttech":      "/categories/keyboard",
+        "pchouse":        "/keyboard",
+    },
+
+    "mouse": {
+        "startech":       "/accessories/mouse",
+        "ryans":          "/category/desktop-component-mouse",
+        "techland":       "/accessories/shop-computer-mouse",
+        "potakait":       "/gaming-mouse",
+        "ucc":            "/mice",
+        "ultratech":      "/mouse",
+        "binarylogic":    "/keyboard-mouse",
+        "skyland":        "/accessories/mouse",
+        "creatus":        "/mouse",
+        "selltech":       "/Mouse",
+        "computersource": "/mouse",
+        "trusttech":      "/categories/mouse",
+        "pchouse":        "/mouse",
+    },
+
+    "headset": {
+        "startech":       "/accessories/headphone",
+        "ryans":          "/category/audio-video-headphone",
+        "techland":       "/accessories/headphone-speaker/shop-headphones-headsets",
+        "potakait":       "/headphones",
+        "ucc":            "/headset",
+        "ultratech":      "/headphone",
+        "binarylogic":    "/headphone",
+        "skyland":        "/sound-system/headphone",
+        "creatus":        "/headphone",
+        "selltech":       "/Headphone",
+        "computersource": "/headphone",
+        "trusttech":      "/categories/headphone",
+        "pchouse":        "/headphones-headsets",
+    },
+
+    # ucc, binarylogic and computersource have no browsable UPS listing.
+    "ups": {
+        "startech":    "/ups",
+        "ryans":       "/category/desktop-component-ups",
+        "techland":    "/ups",
+        "potakait":    "/offline-ups",
+        "ultratech":   "/ups",
+        "skyland":     "/ups",
+        "creatus":     "/ups",
+        "selltech":    "/offline-ups",
+        "trusttech":   "/categories/ups",
+        "pchouse":     "/offline-ups",
+    },
 }

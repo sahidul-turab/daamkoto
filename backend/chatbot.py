@@ -205,6 +205,13 @@ _SPEC_KEYS = {
     "speed", "vram", "chipset", "chipset_brand", "socket", "series", "cores",
     "ram_type", "form_factor", "interface", "nand_type", "wattage", "efficiency",
     "modularity", "type", "radiator_size", "side_panel", "color",
+    # Monitor
+    "resolution", "refresh_rate", "panel_type", "screen_size",
+    # Peripherals
+    "connectivity", "switch_type", "layout", "mechanical", "dpi",
+    "headset_form", "microphone", "noise_cancelling",
+    # UPS
+    "va_rating", "ups_type", "backup_time",
 }
 
 
