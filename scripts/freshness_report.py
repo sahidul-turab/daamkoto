@@ -18,6 +18,10 @@ because one broken scraper should not hide the other twelve working.
 Usage:
   python scripts/freshness_report.py
   python scripts/freshness_report.py --stale-days 3
+  python scripts/freshness_report.py --retailers skyland ryans startech
+
+Pass --retailers when the sweep only covered some of them, otherwise the ones
+that were never in scope are counted as stale and fail the run.
 """
 
 import argparse
@@ -60,7 +64,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Report price data freshness")
     parser.add_argument("--stale-days", type=float, default=STALE_DAYS,
                         help=f"Age in days past which a retailer counts as stale (default: {STALE_DAYS})")
+    parser.add_argument("--retailers", nargs="+", default=None, metavar="SLUG",
+                        help="Only judge these retailers (slugs, e.g. startech). "
+                             "Others are still listed but never fail the run.")
     args = parser.parse_args()
+
+    # Pipeline slugs are lowercase; the DB stores display names ("StarTech").
+    # Every slug equals its display name lowercased, so fold both sides.
+    in_scope = {r.lower() for r in args.retailers} if args.retailers else None
 
     conn = _connect()
     lines: list[str] = []
@@ -93,15 +104,24 @@ def main() -> int:
     finally:
         conn.close()
 
-    stale = [r for r in retailer_rows if r[2] is not None and r[2] > args.stale_days]
+    judged = [r for r in retailer_rows
+              if in_scope is None or r[0].lower() in in_scope]
+    stale = [r for r in judged if r[2] is not None and r[2] > args.stale_days]
 
     lines.append("## Data freshness")
+    if in_scope is not None:
+        lines.append("")
+        lines.append(f"_Judging {len(judged)} of {len(retailer_rows)} retailers "
+                     f"({', '.join(sorted(in_scope))}); the rest were not in this run._")
     lines.append("")
     lines.append("| Retailer | Newest price | Age | Status |")
     lines.append("|---|---|---|---|")
     for name, newest, days_old in retailer_rows:
         days = float(days_old or 0)
-        mark = "OK" if days <= args.stale_days else "STALE"
+        if in_scope is not None and name.lower() not in in_scope:
+            mark = "skipped"
+        else:
+            mark = "OK" if days <= args.stale_days else "STALE"
         lines.append(f"| {name} | {newest:%Y-%m-%d %H:%M} | {days:.1f}d | {mark} |")
 
     lines.append("")
@@ -112,14 +132,14 @@ def main() -> int:
 
     lines.append("")
     if not stale:
-        lines.append(f"All {len(retailer_rows)} retailers refreshed within {args.stale_days:g} day(s).")
+        lines.append(f"All {len(judged)} retailers in scope refreshed within {args.stale_days:g} day(s).")
         _emit(lines)
         return 0
 
     names = ", ".join(r[0] for r in stale)
-    lines.append(f"**{len(stale)} of {len(retailer_rows)} retailers are stale:** {names}")
+    lines.append(f"**{len(stale)} of {len(judged)} retailers are stale:** {names}")
 
-    if len(stale) > len(retailer_rows) / 2:
+    if len(stale) > len(judged) / 2:
         lines.append("")
         lines.append("Most retailers went stale at once - this looks systemic "
                      "(IP block, or the database was never written). Failing the run.")

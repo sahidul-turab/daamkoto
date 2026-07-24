@@ -95,8 +95,16 @@ jobs:
       - name: Freshness report
         # Runs even if the pipeline failed part-way, so a partial sweep still
         # tells us which retailers landed and which went silent.
+        #
+        # Scope the judgement to the retailers this run actually covered -
+        # otherwise a targeted dispatch fails on the ones it never touched.
         if: always()
-        run: python scripts/freshness_report.py
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.retailers }}" ]; then
+            ARGS="--retailers ${{ github.event.inputs.retailers }}"
+          fi
+          python scripts/freshness_report.py $ARGS
 
       - name: Upload logs
         if: always()
