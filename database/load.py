@@ -61,6 +61,11 @@ KNOWN_RETAILERS = {
 # Database connection
 # -------------------------------------------------------------------------
 
+# Arbitrary but fixed application-wide key for the loader's advisory lock.
+# refresh_mv.py uses the same one so a refresh cannot run mid-load.
+_LOAD_LOCK_KEY = 20260724
+
+
 def get_connection():
     """
     Connect using environment variables from .env.
@@ -218,6 +223,17 @@ def load(input_path: Path, category: str, dry_run: bool) -> None:
     try:
         with conn:  # auto-commit on success, rollback on exception
             with conn.cursor() as cur:
+                # Categories are scraped in parallel (see the nightly matrix), and
+                # every one of them upserts into the same products/prices tables
+                # and refreshes the same materialized view. Left unsynchronised
+                # that deadlocks: two loaders each hold rows the other needs.
+                #
+                # Scraping is ~90% of a category's runtime and stays parallel;
+                # only the short write is serialised. The lock is held for the
+                # transaction and released automatically on commit or rollback,
+                # so a crashed loader cannot wedge the others.
+                cur.execute("SELECT pg_advisory_xact_lock(%s)", (_LOAD_LOCK_KEY,))
+
                 retailer_ids = ensure_retailers(cur)
 
                 products_inserted = 0

@@ -19,6 +19,9 @@ import psycopg2
 
 load_dotenv()
 
+# Must match database/load.py — the loader and the refresh serialise on it.
+_LOAD_LOCK_KEY = 20260724
+
 
 def main():
     conn = psycopg2.connect(
@@ -30,9 +33,21 @@ def main():
     )
     conn.autocommit = True
     with conn.cursor() as cur:
-        print("Refreshing mv_current_prices ...", end=" ", flush=True)
-        cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_current_prices;")
-        print("done.")
+        # Same advisory lock the loader takes. Categories run in parallel now, so
+        # without this a refresh can start while another category is still
+        # writing and the two deadlock against each other.
+        #
+        # REFRESH ... CONCURRENTLY cannot run inside a transaction, so this is a
+        # session-level lock rather than a transactional one, and must be
+        # released explicitly - hence the try/finally.
+        print("Waiting for load lock ...", end=" ", flush=True)
+        cur.execute("SELECT pg_advisory_lock(%s)", (_LOAD_LOCK_KEY,))
+        try:
+            print("refreshing mv_current_prices ...", end=" ", flush=True)
+            cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_current_prices;")
+            print("done.")
+        finally:
+            cur.execute("SELECT pg_advisory_unlock(%s)", (_LOAD_LOCK_KEY,))
     conn.close()
 
 

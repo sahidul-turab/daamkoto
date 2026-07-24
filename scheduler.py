@@ -104,6 +104,17 @@ def _create_run(conn, category: str, retailers: list[str]) -> int | None:
         return None
 
 
+_FINISH_SQL = """
+    UPDATE scraper_runs
+    SET status         = %s,
+        finished_at    = NOW(),
+        products_count = %s,
+        prices_count   = %s,
+        error_message  = %s
+    WHERE id = %s
+"""
+
+
 def _finish_run(
     conn,
     run_id: int,
@@ -112,27 +123,37 @@ def _finish_run(
     prices: int,
     error: str | None,
 ) -> None:
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE scraper_runs
-                SET status         = %s,
-                    finished_at    = NOW(),
-                    products_count = %s,
-                    prices_count   = %s,
-                    error_message  = %s
-                WHERE id = %s
-                """,
-                (status, products, prices, error, run_id),
-            )
-        conn.commit()
-    except Exception as exc:
-        log.warning("Could not update scraper_run %d: %s", run_id, exc)
+    """Mark a run finished, reconnecting if the connection died meanwhile.
+
+    A category takes 20-40 minutes and this connection is opened before the
+    scrape starts, so it sits idle throughout. Neon's pooler drops idle
+    connections well inside that window, which used to fail this update with
+    "SSL connection has been closed unexpectedly" and leave the row stuck on
+    RUNNING forever - the Scraper dashboard then showed finished categories as
+    still in progress.
+    """
+    params = (status, products, prices, error, run_id)
+    for attempt in (1, 2):
         try:
-            conn.rollback()
-        except Exception:
-            pass
+            with conn.cursor() as cur:
+                cur.execute(_FINISH_SQL, params)
+            conn.commit()
+            return
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            if attempt == 1:
+                log.info("Run-tracking connection died (%s); reconnecting.", exc)
+                try:
+                    conn = _db_connect()
+                    continue
+                except Exception as reconnect_exc:
+                    log.warning("Reconnect failed: %s", reconnect_exc)
+                    return
+            log.warning("Could not update scraper_run %d: %s", run_id, exc)
+            return
 
 
 # ---------------------------------------------------------------------------
@@ -291,9 +312,18 @@ def main() -> None:
     log.info("Retailers  : %s", retailers)
 
     if args.once:
-        for cat in categories:
-            run_category(cat, retailers, args.dry_run)
+        failed = [cat for cat in categories
+                  if not run_category(cat, retailers, args.dry_run)]
         _evaluate_alerts(args.dry_run)
+        if failed:
+            # Exit non-zero so a CI run goes red. Previously every category could
+            # fail and the job still reported success, because the failure was
+            # only ever written to the log - the same silent-green problem that
+            # let Ryans and Skyland sit stale for 54 days.
+            log.error("--once complete with %d failed categor%s: %s",
+                      len(failed), "y" if len(failed) == 1 else "ies",
+                      ", ".join(failed))
+            sys.exit(1)
         log.info("--once complete, exiting.")
         return
 
