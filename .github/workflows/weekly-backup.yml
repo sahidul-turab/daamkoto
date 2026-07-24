@@ -1,0 +1,116 @@
+# Weekly database backup.
+#
+# Why this exists
+# ---------------
+# Prices are append-only and the history is the one thing in this project that
+# cannot be regenerated. Today's prices can be re-scraped any time; what a GPU
+# cost on 15 June cannot. Before this workflow the only copy of that history was
+# the live Neon database, whose free tier keeps just 6 hours of point-in-time
+# restore - so a bad migration or an accidental DROP would have been permanent.
+#
+# The dump is uploaded as a build artifact (free on public repos, 90-day
+# retention), giving a rolling window of weekly restore points.
+#
+# Restore:
+#   gunzip -c daamkoto-YYYY-MM-DD.sql.gz | psql "<connection-string>"
+#
+# Runs Sundays 21:00 UTC = 03:00 Monday Asia/Dhaka, after Sunday's scrape
+# (20:00 UTC) has finished, so each backup captures a freshly-updated database.
+
+name: Weekly backup
+
+on:
+  schedule:
+    - cron: "0 21 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: weekly-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      PGHOST: ${{ secrets.DB_HOST }}
+      PGPORT: ${{ secrets.DB_PORT }}
+      PGDATABASE: ${{ secrets.DB_NAME }}
+      PGUSER: ${{ secrets.DB_USER }}
+      PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+      PGSSLMODE: require
+
+    steps:
+      - name: Install PostgreSQL 18 client
+        # The runner ships an older client, and pg_dump refuses to dump a server
+        # newer than itself. Neon is on PG 18, so pull the matching client from
+        # the PGDG archive rather than relying on whatever Ubuntu bundles.
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc > /dev/null
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          pg_dump --version
+
+      - name: Dump database
+        run: |
+          STAMP=$(date -u +'%Y-%m-%d')
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          # --no-owner/--no-privileges so the dump restores into any role, which
+          # matters if the database is ever rebuilt on a different provider.
+          pg_dump --no-owner --no-privileges --format=plain \
+            | gzip -9 > "daamkoto-$STAMP.sql.gz"
+          ls -lh "daamkoto-$STAMP.sql.gz"
+
+      - name: Verify the dump is usable
+        # A truncated or empty dump is worse than no dump, because it looks like
+        # a backup until the day you need it. Check the file actually contains
+        # the tables and a plausible number of price rows.
+        run: |
+          FILE="daamkoto-$STAMP.sql.gz"
+
+          gzip -t "$FILE" || { echo "::error::dump is not valid gzip"; exit 1; }
+
+          SIZE=$(stat -c%s "$FILE")
+          echo "compressed size: $SIZE bytes"
+          if [ "$SIZE" -lt 500000 ]; then
+            echo "::error::dump is only $SIZE bytes - suspiciously small"
+            exit 1
+          fi
+
+          for t in products prices retailers alerts; do
+            if gunzip -c "$FILE" | grep -q "CREATE TABLE public.$t"; then
+              echo "  found table: $t"
+            else
+              echo "::error::dump is missing table $t"
+              exit 1
+            fi
+          done
+
+          ROWS=$(gunzip -c "$FILE" | grep -c '^[0-9]*\s' || true)
+          echo "COPY data lines (rough): $ROWS"
+
+          {
+            echo "## Backup"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| File | \`$FILE\` |"
+            echo "| Size | $(numfmt --to=iec "$SIZE") |"
+            echo "| Tables verified | products, prices, retailers, alerts |"
+            echo ""
+            echo "Restore: \`gunzip -c $FILE | psql \"<connection-string>\"\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: daamkoto-db-${{ env.STAMP }}
+          path: daamkoto-*.sql.gz
+          retention-days: 90
+          if-no-files-found: error
