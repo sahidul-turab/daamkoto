@@ -591,9 +591,15 @@ def get_deals(
     """
     Return products with the biggest recent price drops.
 
-    Compares the most recent price in mv_current_prices against the previous
-    recorded price in the prices table (the second-most-recent row per product/retailer).
-    Ranks by absolute BDT drop descending.
+    Compares the most recent price in mv_current_prices against that same
+    listing's previous price. Ranks by absolute BDT drop descending.
+
+    The comparison is per product_url, not just per (product, retailer). A
+    retailer sometimes sells one product under two URLs at different prices -
+    Skyland lists the same AITC DDR5 kit at both 70,200 and 17,500 - and the
+    matcher rightly folds them into one canonical product. Comparing by
+    (product, retailer) alone then picks whichever listing was scraped last as
+    the "previous" price and reports a 75% crash that never happened.
     """
     where_sql = ""
     params: list = []
@@ -605,25 +611,28 @@ def get_deals(
 
     query = f"""
         WITH current AS (
-            SELECT product_id, retailer, price_bdt, scraped_at
+            SELECT product_id, retailer, product_url, price_bdt, scraped_at
             FROM mv_current_prices
             WHERE price_bdt IS NOT NULL
         ),
         previous AS (
-            SELECT DISTINCT ON (pr.product_id, r.name)
+            SELECT DISTINCT ON (pr.product_id, r.name, pr.product_url)
                 pr.product_id,
-                r.name       AS retailer,
-                pr.price_bdt AS prev_price,
+                r.name         AS retailer,
+                pr.product_url,
+                pr.price_bdt   AS prev_price,
                 pr.scraped_at
             FROM prices pr
             JOIN retailers r ON r.id = pr.retailer_id
+            -- Joining to `current` pins the comparison to the same listing and
+            -- replaces the old correlated MAX() subquery.
+            JOIN current c
+              ON  c.product_id  = pr.product_id
+              AND c.retailer    = r.name
+              AND c.product_url IS NOT DISTINCT FROM pr.product_url
             WHERE pr.price_bdt IS NOT NULL
-              AND pr.scraped_at < (
-                  SELECT MAX(mv.scraped_at)
-                  FROM mv_current_prices mv
-                  WHERE mv.product_id = pr.product_id AND mv.retailer = r.name
-              )
-            ORDER BY pr.product_id, r.name, pr.scraped_at DESC
+              AND pr.scraped_at < c.scraped_at
+            ORDER BY pr.product_id, r.name, pr.product_url, pr.scraped_at DESC
         ),
         drops AS (
             SELECT
@@ -636,7 +645,7 @@ def get_deals(
                      THEN ROUND(((prev.prev_price - c.price_bdt) / prev.prev_price) * 100, 1)
                      ELSE 0 END AS drop_pct
             FROM current c
-            JOIN previous prev USING (product_id, retailer)
+            JOIN previous prev USING (product_id, retailer, product_url)
             WHERE c.price_bdt < prev.prev_price
         )
         SELECT
