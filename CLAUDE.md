@@ -86,6 +86,88 @@ Endpoints:
 
 > The old Streamlit frontend has been removed. `frontend-react/` is the only frontend.
 
+---
+
+## Performance architecture (read before touching the hot path)
+
+The goal is that a product list is on screen fast for **every** visitor, including
+someone arriving cold on mobile data in Bangladesh. Five things make that work;
+each is easy to break by accident.
+
+### 1. Nothing heavy on the first paint
+`frontend-react/src/App.tsx` lazy-loads every view except Browse, and every
+overlay (drawer, chatbot, palette, watchlist). Those are the only consumers of
+**framer-motion**, and the product drawer is the only path to **recharts** —
+so both stay out of the entry chunk. Critical-path JS is ~64 kB gzipped.
+
+> ⚠️ **Do not add `manualChunks` back to `vite.config.ts`.** Forcing `recharts` /
+> `framer-motion` into named chunks makes Vite emit `<link rel="modulepreload">`
+> for them in `index.html`, so every first-time visitor downloaded ~190 kB gzip
+> of chart and animation code before a single price rendered. Let Rollup derive
+> chunks from the real import graph.
+
+> ⚠️ **Do not statically import a lazy component into the Browse path.** One
+> `import { ProductDrawer }` at the top of `App.tsx` pulls framer-motion back
+> onto the critical path. Check with:
+> `npm run build && grep modulepreload dist/index.html` — the entry should
+> preload nothing large.
+
+### 2. Backend response cache — `backend/cache.py`
+A `TTLCache` per endpoint family, with two properties beyond a plain TTL dict:
+- **stale-while-revalidate** — an expired entry is still returned *immediately*
+  while it refreshes on a background thread. Users never wait on a timer.
+- **single-flight** — N concurrent misses on the same key run one query, not N.
+
+Use `cache.get_or_load(key, loader)` in routes. The loader must open its own
+connection (`with database.get_db() as conn`), because it may run on a
+background thread after the request has returned.
+
+### 3. Startup warmup — `_warm_caches()` in `backend/main.py`
+Pre-loads page 1 of all 13 categories at boot, so the first visitor after a
+deploy gets a cache hit (~4 ms) instead of a cold aggregation.
+
+> ⚠️ The warm keys must match what the frontend actually requests. If you change
+> `PAGE_SIZE` in `frontend-react/src/config.ts` or `sort` in
+> `src/lib/filterDefaults.ts`, update `_WARM_PAGE_SIZE` / `_WARM_SORTS` to match
+> — otherwise the warmup fills keys nobody asks for and every visitor is slow
+> again. Verify with `GET /health?deep=1` (`cache_warm` should be non-zero) and
+> by timing a first request after a restart.
+
+### 4. Client cache — `frontend-react/src/lib/swr.ts`
+Memory + `sessionStorage`, keyed by request URL, with in-flight de-duplication.
+Revisiting a category issues **zero** network requests. `useProductSearch` seeds
+state from this during render, so a cached view paints with real products on the
+first frame rather than showing a skeleton.
+
+Prefetching (`src/lib/prefetch.ts`): the next page loads while you read the
+current one, category tabs prefetch on pointer-enter, and remaining categories
+warm on idle — skipped entirely when the browser reports Save-Data or 2G.
+
+### 5. Keep-warm — `.github/workflows/keep-warm.yml`
+Render free spins down after ~15 min idle (30–50 s cold start) and Neon suspends
+an idle database. A cron pings `/health?deep=1` during Bangladesh waking hours
+(00:00–20:00 UTC), which touches Postgres too. See DEPLOY.md for the free-tier
+hour budget.
+
+### Query rules
+- `search_products` returns its total via `COUNT(*) OVER ()` in the same query —
+  do not reintroduce a second `COUNT(*)` round trip.
+- A `/products` call with **neither `category` nor `search`** aggregates the whole
+  catalogue and is by far the slowest thing the API does. `useProductSearch`
+  refuses to issue it; keep that guard.
+
+### Measuring
+```bash
+# Backend: warm state + a first-request timing after restart
+curl -s "http://127.0.0.1:8000/health?deep=1"
+
+# Frontend: what the browser must download before first paint
+cd frontend-react && npm run build
+grep -E "modulepreload|<script" dist/index.html
+```
+
+---
+
 ### Stage 5b — Scraper Automation (`scheduler.py`)
 Background daemon that cycles through all 13 categories in round-robin order.
 - Logs to `logs/scheduler.log` (also readable from the Scraper dashboard)
@@ -213,6 +295,10 @@ Or trigger a single run from the **Scraper** tab in the React frontend UI.
 - [x] Price-drop alerts: database/migration_v6_alerts.sql + alert endpoints
 - [x] Deals view added to Header navigation
 - [x] Chatbot rebuilt to render rich blocks + execute UI actions
+- [x] Performance pass: SWR + single-flight response cache, startup warmup,
+      gzip + Cache-Control, single-query product search, client SWR cache +
+      prefetching, code splitting (225 kB → 64 kB gzip critical path),
+      keep-warm cron against Render/Neon cold starts
 - [ ] Apply migration_v6_alerts.sql to populate alerts table
 - [ ] Run pipeline for all categories across all 13 retailers to fully populate DB
 - [ ] Techland scrapers for remaining categories (casing, laptop_ram, portable_hdd, portable_ssd)

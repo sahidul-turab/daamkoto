@@ -95,7 +95,36 @@ Invoke-RestMethod "https://daamkoto-api.onrender.com/health"          # {"status
 ```
 
 > ⚠️ Render free tier **sleeps after ~15 min idle**; the first request wakes it
-> (~30–50s). Normal — not a bug.
+> (~30–50s). The `keep-warm` workflow exists to stop real visitors ever seeing
+> that — see below.
+
+---
+
+## Keeping the site fast (keep-warm workflow)
+
+`.github/workflows/keep-warm.yml` pings `/health?deep=1` every 10 minutes so
+neither Render nor Neon goes to sleep under a visitor. `?deep=1` round-trips
+Postgres, so the database stays awake too — pinging only the web process would
+leave Neon free to suspend underneath it.
+
+**Free-tier budget.** Render allows 750 instance-hours/month and a month is ~730
+hours, so keeping the service up around the clock leaves no headroom. The cron
+therefore runs `00:00–20:00 UTC` = **06:00–02:00 Asia/Dhaka**: awake for every
+waking hour in Bangladesh, asleep in the small hours. That is ~608 h/month.
+
+| You want | Change |
+|---|---|
+| Warm 24/7 (uses ~730 of 750 h) | cron → `*/10 * * * *` |
+| A different backend URL | Set repo **Variable** `API_URL` (Settings → Secrets and variables → Actions → Variables) |
+| Turn it off | Disable the workflow in the Actions tab |
+
+If you ever add a second free Render service, revisit this — two always-on free
+services will exceed the 750-hour allowance.
+
+**Checking it works:** the Actions tab shows a run every 10 minutes; each logs
+the `/health?deep=1` JSON. `cache_warm` in that output is the number of
+pre-warmed product pages held in memory (26 when healthy). `db_ms` is the
+database round-trip — a sudden jump there means Neon is being slow, not the API.
 
 ---
 

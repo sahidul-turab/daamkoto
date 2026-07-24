@@ -104,10 +104,13 @@ class TTLCache:
                     return value
             try:
                 value = loader()
+                # Store before releasing: a waiter that arrives in the gap
+                # between release and set would otherwise miss and re-run the
+                # very query this lock exists to collapse.
+                self.set(key, value)
+                return value
             finally:
                 self._release_inflight_lock(key)
-            self.set(key, value)
-            return value
 
     def warm(self, key: str, loader: Callable[[], Any]) -> None:
         """Populate `key` if it is missing. Used by the startup warmup."""

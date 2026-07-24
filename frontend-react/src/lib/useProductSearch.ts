@@ -40,24 +40,40 @@ export function useProductSearch(
   filters: Filters,
   page: number,
 ): { products: ProductSummary[]; total: number; loading: boolean } {
+  // With neither a category nor a search term the query degenerates into an
+  // aggregation over the whole catalogue — by far the slowest thing the API can
+  // be asked to do, and nothing in the UI wants the result. SlotPicker hits this
+  // whenever it is mounted with no slot chosen yet, so guard it here rather than
+  // letting each caller remember to.
+  const enabled = Boolean(categoryDb) || Boolean(filters.search);
+
   const params = useMemo(
     () => toParams(categoryDb, filters, page),
     [categoryDb, filters, page],
   );
-  const sig = buildUrl("/products", params);
+  const sig = enabled ? buildUrl("/products", params) : "";
 
   // Seed from cache during render, so a revisited category paints with real
   // products on the first frame instead of a skeleton that resolves 200ms later.
-  const cached = peek<{ products: ProductSummary[]; total: number }>(sig);
+  const cached = enabled
+    ? peek<{ products: ProductSummary[]; total: number }>(sig)
+    : null;
   const [products, setProducts] = useState<ProductSummary[]>(cached?.products ?? []);
   const [total, setTotal] = useState(cached?.total ?? 0);
-  const [loading, setLoading] = useState(cached === null);
+  const [loading, setLoading] = useState(enabled && cached === null);
 
   const reqId = useRef(0);
   const prevSearch = useRef(filters.search);
 
   useEffect(() => {
     const id = ++reqId.current;
+
+    if (!enabled) {
+      setProducts([]);
+      setTotal(0);
+      setLoading(false);
+      return;
+    }
 
     // A cache hit means we already have something worth showing. Render it now
     // and let the revalidation swap in quietly — no loading state at all.
