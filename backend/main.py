@@ -2,13 +2,21 @@
 FastAPI backend for DaamKoto — PC component price comparison for Bangladesh.
 
 Endpoints:
-  GET /health                  — liveness check
-  GET /categories              — list all product categories
-  GET /brands?category=RAM     — list brands (optionally for one category)
-  GET /retailers               — list known retailers
-  GET /products                — search/filter products (see query params below)
-  GET /products/{id}           — single product with all current listings
-  GET /products/{id}/history   — full price history for one product
+  GET  /health                      — liveness check
+  GET  /categories                  — list all product categories
+  GET  /brands?category=RAM         — list brands (optionally for one category)
+  GET  /retailers                   — list known retailers
+  GET  /products                    — search/filter products (see query params below)
+  GET  /products/{id}               — single product with all current listings
+  GET  /products/{id}/history       — full price history for one product
+  POST /chat                        — agentic AI assistant (multi-tool, free LLMs)
+  GET  /deals                       — biggest recent price drops across all retailers
+  POST /build/plan                  — AI build-from-budget
+  POST /build/check                 — compatibility check for a set of part IDs
+  POST /alerts                      — create a price-drop alert
+  GET  /alerts?device_id=X          — list alerts for a device
+  DELETE /alerts/{id}?device_id=X   — delete an alert
+  GET  /alerts/triggered?device_id=X — alerts that have fired
 
 Running locally:
   uvicorn backend.main:app --reload --port 8000
@@ -22,20 +30,25 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from backend import chatbot, database, queries
+from backend import agent as agent_mod, database, queries
 from backend.cache import (
     brands_cache,
+    deals_cache,
     history_cache,
+    invalidate_everything,
+    meta_cache,
     product_list_cache,
     seller_specs_cache,
     spec_cache,
@@ -125,13 +138,73 @@ def _run_pipeline_bg(run_id: int, category: str, retailers: list[str]) -> None:
     except Exception as exc:
         _log.error("Failed to update scraper_run %d: %s", run_id, exc)
 
-    # Clear in-memory caches so fresh prices appear immediately after the run
-    product_list_cache.invalidate_all()
-    brands_cache.invalidate_all()
-    spec_cache.invalidate_all()
+    # Clear in-memory caches so fresh prices appear immediately after the run,
+    # then immediately re-warm so the next visitor doesn't pay for the cold cache.
+    invalidate_everything()
+    threading.Thread(target=_warm_caches, daemon=True).start()
 
     with _active_runs_lock:
         _active_runs.pop(category, None)
+
+
+# ---------------------------------------------------------------------------
+# Cache warmup
+# ---------------------------------------------------------------------------
+
+# Category tabs in frontend-react/src/config.ts order — the first entry is the
+# default landing view, so warming follows the same order users arrive in.
+_WARM_CATEGORIES = [
+    "RAM DESKTOP", "RAM LAPTOP", "GPU", "PROCESSOR", "MOTHERBOARD",
+    "SSD", "PORTABLE SSD", "HDD", "PORTABLE HDD", "PSU",
+    "CPU COOLER", "CASING COOLER", "CASING",
+]
+
+# These must mirror frontend-react/src/config.ts (PAGE_SIZE) and
+# src/lib/filterDefaults.ts (sort) — a mismatch would warm cache keys that no
+# real request ever asks for, leaving every visitor on the slow path.
+_WARM_PAGE_SIZE = 20
+_WARM_SORTS = ("store_count_desc", "price_asc")
+
+
+def _warm_product_page(conn, category: str, sort: str) -> dict:
+    products, total = queries.search_products(
+        conn, category=category, in_stock_only=True, sort=sort,
+        limit=_WARM_PAGE_SIZE, offset=0,
+    )
+    return {"total": total, "limit": _WARM_PAGE_SIZE, "offset": 0,
+            "products": products}
+
+
+def _warm_caches() -> None:
+    """
+    Pre-populate the response cache with the queries real users make first.
+
+    Without this, the first visitor after every deploy or cold start pays the
+    full aggregation cost on whatever category they land on — and on Render's
+    free tier that is exactly the visitor who already waited for a cold boot.
+    Runs on a background thread, so it never delays the server becoming ready.
+    """
+    try:
+        with database.get_db() as conn:
+            meta_cache.warm(meta_cache.make_key("categories"),
+                            lambda: queries.get_categories(conn))
+            meta_cache.warm(meta_cache.make_key("retailers"),
+                            lambda: queries.get_retailers(conn))
+
+            for cat in _WARM_CATEGORIES:
+                for sort in _WARM_SORTS:
+                    key = product_list_cache.make_key(
+                        None, cat, None, None, None, None, None, None,
+                        True, sort, _WARM_PAGE_SIZE, 0,
+                    )
+                    product_list_cache.warm(
+                        key, lambda c=cat, s=sort: _warm_product_page(conn, c, s)
+                    )
+                brands_cache.warm(brands_cache.make_key(cat),
+                                  lambda c=cat: queries.get_brands(conn, category=c))
+        _log.info("Cache warmup complete (%d categories)", len(_WARM_CATEGORIES))
+    except Exception as exc:
+        _log.warning("Cache warmup skipped: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +213,10 @@ def _run_pipeline_bg(run_id: int, category: str, retailers: list[str]) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    database.init_pool(min_conn=1, max_conn=10)
+    # min_conn=3: opening a connection to a managed Postgres (Neon, Singapore)
+    # costs a TLS handshake worth ~100ms+. Keeping a few open means the first
+    # requests after boot never pay it.
+    database.init_pool(min_conn=3, max_conn=10)
     # Fix any RUNNING rows left behind by a previous server crash
     try:
         with database.get_db() as conn:
@@ -149,6 +225,11 @@ async def lifespan(app: FastAPI):
                 _log.info("Marked %d stale RUNNING run(s) as FAILED on startup", stale)
     except Exception:
         pass  # scraper_runs table may not exist yet — migration not applied
+
+    # Fill the response cache in the background so the first real visitor gets
+    # a cache hit instead of a cold aggregation.
+    threading.Thread(target=_warm_caches, daemon=True).start()
+
     yield
     database.close_pool()
 
@@ -160,11 +241,68 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Allow Streamlit (or any local frontend) to call this API without CORS errors
+# ---------------------------------------------------------------------------
+# Middleware
+#
+# Starlette applies middleware outermost-last, so the response travels:
+#   route → cache headers → gzip → CORS → client
+# ---------------------------------------------------------------------------
+
+# How long a browser may reuse a response without asking again, per path prefix.
+# Prices only move when the scraper pipeline runs (at most a few times a day),
+# so short max-age plus a long stale-while-revalidate window gives instant
+# repeat loads while keeping data effectively current.
+_CACHEABLE: tuple[tuple[str, str], ...] = (
+    ("/products",       "public, max-age=120, stale-while-revalidate=600"),
+    ("/categories",     "public, max-age=900, stale-while-revalidate=3600"),
+    ("/brands",         "public, max-age=900, stale-while-revalidate=3600"),
+    ("/retailers",      "public, max-age=900, stale-while-revalidate=3600"),
+    ("/specs/values",   "public, max-age=900, stale-while-revalidate=3600"),
+    ("/deals",          "public, max-age=300, stale-while-revalidate=1800"),
+)
+
+# Never cache these — they report live state and must not be served stale.
+_NO_STORE_PREFIXES = ("/scrapers", "/alerts", "/chat", "/build", "/health")
+
+
+@app.middleware("http")
+async def cache_headers(request: Request, call_next):
+    """
+    Attach Cache-Control to read-only data endpoints.
+
+    This is what stops a returning visitor from re-fetching the same product
+    list on every navigation and page refresh — the browser serves it from disk
+    with no network request at all, and any CDN in front can do the same.
+    """
+    response = await call_next(request)
+
+    if request.method != "GET" or response.status_code != 200:
+        return response
+
+    path = request.url.path
+    if path.startswith(_NO_STORE_PREFIXES):
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    # GZipMiddleware sits outside this one and sets Vary: Accept-Encoding itself
+    # whenever it compresses, so there is nothing to add here.
+    for prefix, value in _CACHEABLE:
+        if path.startswith(prefix):
+            response.headers["Cache-Control"] = value
+            break
+
+    return response
+
+
+# Compress JSON responses. A 20 KB product page drops to roughly 3 KB, which is
+# the difference that shows up on a mobile connection.
+app.add_middleware(GZipMiddleware, minimum_size=800)
+
+# Allow the deployed frontend (or any local dev server) to call this API.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -226,16 +364,52 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class ChatContext(BaseModel):
+    """Optional UI context sent from the frontend with each chat turn."""
+    category: str | None = None            # currently-browsed category
+    filters: dict | None = None            # active filter params
+    build_slots: dict | None = None        # {slot: product_id} for current build
+
+
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = []
+    context: ChatContext | None = None
 
 
 class ChatResponse(BaseModel):
-    params: dict                     # filter params Claude extracted
-    products: list[ProductSummary]   # database results
-    total: int
-    explanation: str                 # Claude's brief explanation
+    text: str                            # agent's natural-language answer
+    blocks: list[dict] = []             # rich UI blocks (product_list, build_sheet, etc.)
+    actions: list[dict] = []            # UI directives (apply_filters, add_to_build, etc.)
+    # Legacy fields kept for backward compat
+    params: dict = {}
+    products: list[Any] = []
+    total: int = 0
+    explanation: str = ""
+
+
+class BuildPlanRequest(BaseModel):
+    budget_bdt: float
+    use_case: str = "balanced"
+    socket_preference: str | None = None
+    include_gpu: bool = True
+
+
+class BuildCheckRequest(BaseModel):
+    cpu_id: int | None = None
+    mobo_id: int | None = None
+    ram_id: int | None = None
+    gpu_id: int | None = None
+    psu_id: int | None = None
+    case_id: int | None = None
+    cooler_id: int | None = None
+    storage_id: int | None = None
+
+
+class AlertCreate(BaseModel):
+    device_id: str
+    product_id: int
+    target_price: float
 
 
 class RunRequest(BaseModel):
@@ -248,35 +422,64 @@ class RunRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+def health(deep: bool = Query(False, description="Also round-trip the database")):
+    """
+    Liveness check. Stays dependency-free by default so a database blip never
+    makes the platform restart a perfectly healthy web process.
+
+    `?deep=1` additionally touches the database. The keep-warm cron uses that
+    form so a managed Postgres with idle auto-suspend stays awake too — a
+    suspended database is a multi-second stall for whoever arrives next.
+    """
+    if not deep:
+        return {"status": "ok"}
+
+    started = time.monotonic()
+    try:
+        with database.get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        db_ok = True
+        db_error = None
+    except Exception as exc:
+        db_ok = False
+        db_error = str(exc)
+
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "db": db_ok,
+        "db_error": db_error,
+        "db_ms": round((time.monotonic() - started) * 1000, 1),
+        "cache_warm": product_list_cache.size(),
+    }
 
 
 @app.get("/categories", response_model=list[str])
 def list_categories():
     """All product categories in the database (e.g. RAM, GPU, SSD)."""
-    with database.get_db() as conn:
-        return queries.get_categories(conn)
+    def load():
+        with database.get_db() as conn:
+            return queries.get_categories(conn)
+    return meta_cache.get_or_load(meta_cache.make_key("categories"), load)
 
 
 @app.get("/brands", response_model=list[str])
 def list_brands(category: str | None = Query(None, description="Filter brands by category")):
     """All brands, optionally narrowed to one category."""
-    key = brands_cache.make_key(category)
-    cached = brands_cache.get(key)
-    if cached is not None:
-        return cached
-    with database.get_db() as conn:
-        result = queries.get_brands(conn, category=category)
-    brands_cache.set(key, result)
-    return result
+    def load():
+        with database.get_db() as conn:
+            return queries.get_brands(conn, category=category)
+    return brands_cache.get_or_load(brands_cache.make_key(category), load)
 
 
 @app.get("/retailers")
 def list_retailers():
     """All known retailers."""
-    with database.get_db() as conn:
-        return queries.get_retailers(conn)
+    def load():
+        with database.get_db() as conn:
+            return queries.get_retailers(conn)
+    return meta_cache.get_or_load(meta_cache.make_key("retailers"), load)
 
 
 @app.get("/specs/values", response_model=list[str])
@@ -294,14 +497,10 @@ def get_spec_values(
       /specs/values?category=Motherboard&key=socket → ["AM4","AM5","LGA1700",...]
       /specs/values?category=PSU&key=efficiency     → ["80+ Bronze","80+ Gold",...]
     """
-    cache_key = spec_cache.make_key(category, key)
-    cached = spec_cache.get(cache_key)
-    if cached is not None:
-        return cached
-    with database.get_db() as conn:
-        result = queries.get_spec_values(conn, category, key)
-    spec_cache.set(cache_key, result)
-    return result
+    def load():
+        with database.get_db() as conn:
+            return queries.get_spec_values(conn, category, key)
+    return spec_cache.get_or_load(spec_cache.make_key(category, key), load)
 
 
 @app.get("/products", response_model=ProductList)
@@ -421,29 +620,26 @@ def list_products(
         specs_filter or None, min_price, max_price,
         in_stock_only, sort, limit, offset,
     )
-    cached = product_list_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    def load():
+        with database.get_db() as conn:
+            products, total = queries.search_products(
+                conn,
+                search=search,
+                category=category,
+                brand=brand,
+                generation=generation,
+                capacity=capacity,
+                specs_filter=specs_filter or None,
+                min_price=min_price,
+                max_price=max_price,
+                in_stock_only=in_stock_only,
+                sort=sort,
+                limit=limit,
+                offset=offset,
+            )
+        return {"total": total, "limit": limit, "offset": offset, "products": products}
 
-    with database.get_db() as conn:
-        products, total = queries.search_products(
-            conn,
-            search=search,
-            category=category,
-            brand=brand,
-            generation=generation,
-            capacity=capacity,
-            specs_filter=specs_filter or None,
-            min_price=min_price,
-            max_price=max_price,
-            in_stock_only=in_stock_only,
-            sort=sort,
-            limit=limit,
-            offset=offset,
-        )
-    result = {"total": total, "limit": limit, "offset": offset, "products": products}
-    product_list_cache.set(cache_key, result)
-    return result
+    return product_list_cache.get_or_load(cache_key, load)
 
 
 @app.get("/products/{product_id}", response_model=ProductDetail)
@@ -475,27 +671,23 @@ def get_seller_specs(product_id: int):
     Only populated after running the pipeline with the updated normalize.py that
     emits seller_raw_specs (enrich.py detail-page specs + inline_specs from listing scrapers).
     """
-    cache_key = seller_specs_cache.make_key(product_id)
-    cached = seller_specs_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    # No existence check here: get_seller_specs returns {} for an unknown id,
+    # which diff turns into empty lists — a valid, cheap response. Skipping the
+    # full get_product() aggregation halves the DB work for this path.
+    def load():
+        with database.get_db() as conn:
+            seller_data = queries.get_seller_specs(conn, product_id)
+            result = queries.diff_seller_specs(seller_data)
+        return {
+            "product_id": product_id,
+            "retailers": result["retailers"],
+            "shared": result["shared"],
+            "differing": result["differing"],
+        }
 
-    # No existence check here: this endpoint is prefetched in parallel for every
-    # visible product (~20 per page). get_seller_specs returns {} for an unknown
-    # id, which diff turns into empty lists — a valid, cheap response. Skipping
-    # the full get_product() aggregation halves the DB work for this hot path.
-    with database.get_db() as conn:
-        seller_data = queries.get_seller_specs(conn, product_id)
-        result = queries.diff_seller_specs(seller_data)
-
-    response = {
-        "product_id": product_id,
-        "retailers": result["retailers"],
-        "shared": result["shared"],
-        "differing": result["differing"],
-    }
-    seller_specs_cache.set(cache_key, response)
-    return response
+    return seller_specs_cache.get_or_load(
+        seller_specs_cache.make_key(product_id), load
+    )
 
 
 @app.get("/products/{product_id}/history", response_model=ProductHistory)
@@ -510,25 +702,25 @@ def get_price_history(
 
     Example: /products/42/history?retailer=StarTech
     """
-    cache_key = history_cache.make_key(product_id, retailer, limit)
-    cached = history_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    def load():
+        with database.get_db() as conn:
+            product = queries.get_product(conn, product_id)
+            if product is None:
+                raise HTTPException(
+                    status_code=404, detail=f"Product {product_id} not found"
+                )
+            history = queries.get_price_history(
+                conn, product_id, retailer=retailer, limit=limit
+            )
+        return {
+            "product_id": product_id,
+            "product_name": product["name"],
+            "history": history,
+        }
 
-    with database.get_db() as conn:
-        product = queries.get_product(conn, product_id)
-        if product is None:
-            raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
-        history = queries.get_price_history(
-            conn, product_id, retailer=retailer, limit=limit
-        )
-    response = {
-        "product_id": product_id,
-        "product_name": product["name"],
-        "history": history,
-    }
-    history_cache.set(cache_key, response)
-    return response
+    return history_cache.get_or_load(
+        history_cache.make_key(product_id, retailer, limit), load
+    )
 
 
 @app.get("/scrapers/status")
@@ -616,53 +808,179 @@ def trigger_run(req: RunRequest):
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
     """
-    Natural-language product search powered by Claude.
+    Agentic AI assistant — multi-tool, multi-step.
 
-    Send a plain-English query; Claude extracts filter params; the database
-    returns real prices. Claude never invents prices — it only generates
-    query parameters.
+    The agent can search products, get price history, check compatibility,
+    plan a full PC build from budget, and return UI action directives
+    (apply filters, add to build, open product). All powered by free LLMs
+    (Groq llama-3.3-70b for fast search, Gemini 2.0 Flash for reasoning).
 
-    Example body: {"message": "find 16GB DDR4 RAM under 5000 taka"}
+    Example body:
+      {"message": "Build me a 90000 taka gaming PC"}
+      {"message": "Find cheap RTX 4060 and check if prices dropped"}
+
+    The response includes:
+      text    — natural-language answer
+      blocks  — typed rich payloads: product_list, build_sheet, compat_report, etc.
+      actions — UI directives the frontend should execute
     """
     history = [{"role": m.role, "content": m.content} for m in req.history]
+    context = req.context.model_dump() if req.context else {}
 
     try:
-        params, explanation = chatbot.translate_to_params(req.message, history=history)
-    except ValueError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        with database.get_db() as conn:
+            result = agent_mod.run(
+                message=req.message,
+                history=history,
+                context=context,
+                conn=conn,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except RuntimeError as exc:
+        # Rate-limit / quota errors — surface as a chat message, not a 500
+        msg = str(exc)
+        return {
+            "text": msg, "blocks": [], "actions": [],
+            "params": {}, "products": [], "total": 0, "explanation": msg,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Agent error: {exc}")
 
-    if not params:
-        return {"params": {}, "products": [], "total": 0, "explanation": explanation}
-
-    # Build specs_filter from any spec-level params the chatbot extracted
-    _SPEC_KEYS = {
-        "speed", "latency", "form_factor", "vram", "chipset", "chipset_brand",
-        "memory_type", "interface", "socket", "series", "architecture",
-        "ram_type", "wifi", "nand_type", "wattage", "efficiency", "modularity",
-        "type", "radiator_size", "side_panel", "color",
-        "resolution", "refresh_rate", "panel_type",
-    }
-    specs_filter = {k: v for k, v in params.items() if k in _SPEC_KEYS and v is not None}
-
-    with database.get_db() as conn:
-        products, total = queries.search_products(
-            conn,
-            category=params.get("category"),
-            brand=params.get("brand"),
-            generation=params.get("generation"),
-            capacity=params.get("capacity"),
-            specs_filter=specs_filter or None,
-            min_price=params.get("min_price"),
-            max_price=params.get("max_price"),
-            in_stock_only=params.get("in_stock_only", True),
-            sort=params.get("sort", "price_asc"),
-            limit=20,
-            offset=0,
-        )
+    # Populate legacy fields for backward compatibility with older frontend builds
+    products: list = []
+    total = 0
+    explanation = result.get("text", "")
+    for block in result.get("blocks", []):
+        if block.get("type") == "product_list" and not products:
+            products = block.get("products", [])
+            total = block.get("total", len(products))
+        elif block.get("type") == "build_sheet" and not products:
+            products = [
+                {"id": s["product_id"], "name": s["product_name"],
+                 "brand": s.get("brand"), "cheapest_price": s.get("cheapest_price")}
+                for s in block.get("slots", [])
+            ]
+            total = len(products)
 
     return {
-        "params": params,
+        "text": result.get("text", ""),
+        "blocks": result.get("blocks", []),
+        "actions": result.get("actions", []),
+        # Legacy
+        "params": {},
         "products": products,
         "total": total,
         "explanation": explanation,
     }
+
+
+# ---------------------------------------------------------------------------
+# Deals feed
+# ---------------------------------------------------------------------------
+
+@app.get("/deals")
+def get_deals(
+    category: str | None = Query(None, description="Filter deals by category"),
+    limit: int = Query(20, ge=1, le=50),
+):
+    """
+    Biggest recent price drops across all retailers.
+    Each entry includes: product info, current vs previous price, drop amount and %.
+    """
+    def load():
+        with database.get_db() as conn:
+            deals = queries.get_deals(conn, category=category, limit=limit)
+        return {"deals": deals, "count": len(deals)}
+
+    return deals_cache.get_or_load(deals_cache.make_key(category, limit), load)
+
+
+# ---------------------------------------------------------------------------
+# Build endpoints (callable directly, not just via chat)
+# ---------------------------------------------------------------------------
+
+@app.post("/build/plan")
+def plan_build(req: BuildPlanRequest):
+    """
+    Generate a full PC build within a budget.
+
+    Allocates budget across CPU, GPU, Mobo, RAM, Storage, PSU, Case, Cooler —
+    picks cheapest compatible parts from the DB, runs compatibility checks.
+
+    Example body: {"budget_bdt": 90000, "use_case": "gaming"}
+    """
+    from backend import tools as tools_mod
+    with database.get_db() as conn:
+        result = tools_mod._handle_plan_build(
+            conn,
+            budget_bdt=req.budget_bdt,
+            use_case=req.use_case,
+            socket_preference=req.socket_preference,
+            include_gpu=req.include_gpu,
+        )
+    return result
+
+
+@app.post("/build/check")
+def check_compatibility(req: BuildCheckRequest):
+    """
+    Check compatibility between PC parts by product ID.
+
+    Checks: CPU↔Mobo socket, RAM gen↔Mobo, Mobo↔Case size, PSU wattage, AIO fit.
+    Pass only the slots you want to check — missing slots are skipped.
+
+    Example body: {"cpu_id": 42, "mobo_id": 77, "ram_id": 15}
+    """
+    from backend import compat as compat_mod
+    slot_map = {
+        "cpu": req.cpu_id, "mobo": req.mobo_id, "ram": req.ram_id,
+        "gpu": req.gpu_id, "psu": req.psu_id, "case": req.case_id,
+        "cooler": req.cooler_id, "storage": req.storage_id,
+    }
+    with database.get_db() as conn:
+        products = {
+            slot: queries.get_product(conn, pid)
+            for slot, pid in slot_map.items() if pid
+        }
+    result = compat_mod.evaluate_build(products)
+    return result.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# Alerts
+# ---------------------------------------------------------------------------
+
+@app.post("/alerts")
+def create_alert(req: AlertCreate):
+    """
+    Create or update a price-drop alert. Fires when current price ≤ target_price.
+    device_id is a client-generated UUID stored in localStorage (no auth required).
+    """
+    with database.get_db() as conn:
+        alert = queries.create_alert(conn, req.device_id, req.product_id, req.target_price)
+    return alert
+
+
+@app.get("/alerts")
+def list_alerts(device_id: str = Query(..., description="Client device UUID")):
+    """List all active and triggered alerts for this device."""
+    with database.get_db() as conn:
+        return queries.list_alerts(conn, device_id)
+
+
+@app.delete("/alerts/{alert_id}")
+def delete_alert(alert_id: int, device_id: str = Query(..., description="Client device UUID")):
+    """Delete a price-drop alert."""
+    with database.get_db() as conn:
+        deleted = queries.delete_alert(conn, device_id, alert_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {"deleted": True}
+
+
+@app.get("/alerts/triggered")
+def get_triggered_alerts(device_id: str = Query(..., description="Client device UUID")):
+    """Get alerts that have fired (price reached target). Used for UI badge."""
+    with database.get_db() as conn:
+        return queries.get_triggered_alerts(conn, device_id)

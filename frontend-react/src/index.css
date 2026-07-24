@@ -209,6 +209,20 @@ body::after {
   animation: fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Used by the active category pill, which is plain CSS so that framer-motion
+   stays off the first-paint path. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.18s ease-out both;
+}
+
 @keyframes shimmer {
   100% {
     transform: translateX(100%);

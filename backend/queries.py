@@ -163,7 +163,6 @@ def search_products(
     }
     order_sql = order_map.get(sort, order_map["price_asc"])
 
-    all_params = params + params + having_params  # params used twice: main + count
     main_params = params + having_params
 
     retailer_count_sql = (
@@ -188,6 +187,10 @@ def search_products(
               - MIN(cp.price_bdt) FILTER (WHERE cp.stock_status = 'in_stock'),
             0)                                                             AS savings,
             {retailer_count_sql}                                           AS retailer_count,
+            -- Window functions run after GROUP BY/HAVING but before LIMIT, so this
+            -- is the full match count — the same number the old separate COUNT(*)
+            -- query produced, for free instead of a second full aggregation.
+            COUNT(*) OVER ()                                               AS total_count,
             JSON_AGG(
                 JSON_BUILD_OBJECT(
                     'retailer',       cp.retailer,
@@ -224,12 +227,21 @@ def search_products(
         cur.execute(main_query, main_params + [limit, offset])
         rows = cur.fetchall()
 
-        cur.execute(count_query, params + having_params)
-        total = cur.fetchone()["count"]
+        if rows:
+            total = rows[0]["total_count"]
+        elif offset == 0:
+            # No rows on the first page means nothing matched at all.
+            total = 0
+        else:
+            # Paged past the end: the window count came back with no rows to
+            # carry it, so fall back to the standalone COUNT for this rare case.
+            cur.execute(count_query, params + having_params)
+            total = cur.fetchone()["count"]
 
     products = []
     for row in rows:
         row = dict(row)
+        row.pop("total_count", None)
         listings = row.get("listings") or []
         # Find cheapest in-stock retailer
         priced = [l for l in listings if l["price_bdt"] and l.get("stock_status", "in_stock" if l["in_stock"] else "out_of_stock") == "in_stock"]
@@ -565,3 +577,222 @@ def get_spec_values(conn, category: str, key: str) -> list[str]:
             (key, category, key, key, key),
         )
         return [r[0] for r in cur.fetchall() if r[0]]
+
+
+# ---------------------------------------------------------------------------
+# Deals feed — biggest recent price drops
+# ---------------------------------------------------------------------------
+
+def get_deals(
+    conn,
+    category: str | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """
+    Return products with the biggest recent price drops.
+
+    Compares the most recent price in mv_current_prices against the previous
+    recorded price in the prices table (the second-most-recent row per product/retailer).
+    Ranks by absolute BDT drop descending.
+    """
+    where_sql = ""
+    params: list = []
+    if category:
+        where_sql = "WHERE UPPER(p.category) = UPPER(%s)"
+        params.append(category)
+
+    params.append(limit)
+
+    query = f"""
+        WITH current AS (
+            SELECT product_id, retailer, price_bdt, scraped_at
+            FROM mv_current_prices
+            WHERE price_bdt IS NOT NULL
+        ),
+        previous AS (
+            SELECT DISTINCT ON (pr.product_id, r.name)
+                pr.product_id,
+                r.name       AS retailer,
+                pr.price_bdt AS prev_price,
+                pr.scraped_at
+            FROM prices pr
+            JOIN retailers r ON r.id = pr.retailer_id
+            WHERE pr.price_bdt IS NOT NULL
+              AND pr.scraped_at < (
+                  SELECT MAX(mv.scraped_at)
+                  FROM mv_current_prices mv
+                  WHERE mv.product_id = pr.product_id AND mv.retailer = r.name
+              )
+            ORDER BY pr.product_id, r.name, pr.scraped_at DESC
+        ),
+        drops AS (
+            SELECT
+                c.product_id,
+                c.retailer,
+                c.price_bdt   AS current_price,
+                prev.prev_price,
+                (prev.prev_price - c.price_bdt) AS drop_bdt,
+                CASE WHEN prev.prev_price > 0
+                     THEN ROUND(((prev.prev_price - c.price_bdt) / prev.prev_price) * 100, 1)
+                     ELSE 0 END AS drop_pct
+            FROM current c
+            JOIN previous prev USING (product_id, retailer)
+            WHERE c.price_bdt < prev.prev_price
+        )
+        SELECT
+            p.id,
+            p.name,
+            p.brand,
+            p.category,
+            p.specs,
+            d.retailer,
+            d.current_price,
+            d.prev_price,
+            d.drop_bdt,
+            d.drop_pct
+        FROM drops d
+        JOIN products p ON p.id = d.product_id
+        {where_sql}
+        ORDER BY d.drop_bdt DESC
+        LIMIT %s
+    """
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(query, params)
+        return [dict(r) for r in cur.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# Alerts — price-drop notifications
+# ---------------------------------------------------------------------------
+
+def create_alert(
+    conn,
+    device_id: str,
+    product_id: int,
+    target_price: float,
+) -> dict:
+    """Create or update a price-drop alert for a product."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            INSERT INTO alerts (device_id, product_id, target_price)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (device_id, product_id) DO UPDATE
+              SET target_price = EXCLUDED.target_price,
+                  triggered     = FALSE,
+                  last_notified_at = NULL
+            RETURNING id, device_id, product_id, target_price, triggered, created_at
+            """,
+            (device_id, product_id, target_price),
+        )
+        conn.commit()
+        return dict(cur.fetchone())
+
+
+def list_alerts(conn, device_id: str) -> list[dict]:
+    """List all alerts for a device, with current product price."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT
+                a.id,
+                a.product_id,
+                a.target_price,
+                a.triggered,
+                a.last_notified_at,
+                a.created_at,
+                p.name        AS product_name,
+                p.category    AS product_category,
+                cp.price_bdt  AS current_price,
+                cp.retailer   AS cheapest_retailer
+            FROM alerts a
+            JOIN products p ON p.id = a.product_id
+            LEFT JOIN mv_current_prices cp ON cp.product_id = a.product_id
+              AND cp.price_bdt = (
+                  SELECT MIN(m2.price_bdt) FROM mv_current_prices m2
+                  WHERE m2.product_id = a.product_id AND m2.price_bdt IS NOT NULL
+              )
+            WHERE a.device_id = %s
+            ORDER BY a.created_at DESC
+            """,
+            (device_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def delete_alert(conn, device_id: str, alert_id: int) -> bool:
+    """Delete an alert. Returns True if deleted."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM alerts WHERE id = %s AND device_id = %s",
+            (alert_id, device_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def evaluate_alerts(conn) -> list[dict]:
+    """
+    Check all active (non-triggered) alerts against current prices.
+    Returns a list of triggered alerts with product + price info.
+    Called by the scheduler after each scrape cycle.
+    """
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT
+                a.id,
+                a.device_id,
+                a.product_id,
+                a.target_price,
+                p.name        AS product_name,
+                MIN(cp.price_bdt) AS current_price,
+                (SELECT retailer FROM mv_current_prices
+                 WHERE product_id = a.product_id AND price_bdt IS NOT NULL
+                 ORDER BY price_bdt ASC LIMIT 1) AS cheapest_retailer
+            FROM alerts a
+            JOIN products p ON p.id = a.product_id
+            JOIN mv_current_prices cp ON cp.product_id = a.product_id
+            WHERE a.triggered = FALSE
+              AND cp.price_bdt IS NOT NULL
+              AND cp.price_bdt <= a.target_price
+            GROUP BY a.id, a.device_id, a.product_id, a.target_price, p.name
+            """,
+        )
+        triggered = [dict(r) for r in cur.fetchall()]
+
+    if triggered:
+        ids = [t["id"] for t in triggered]
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE alerts SET triggered = TRUE, last_notified_at = NOW() WHERE id = ANY(%s)",
+                (ids,),
+            )
+            conn.commit()
+
+    return triggered
+
+
+def get_triggered_alerts(conn, device_id: str) -> list[dict]:
+    """Get triggered alerts for a device (for the UI notification badge)."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT
+                a.id,
+                a.product_id,
+                a.target_price,
+                a.last_notified_at,
+                p.name AS product_name,
+                MIN(cp.price_bdt) AS current_price
+            FROM alerts a
+            JOIN products p ON p.id = a.product_id
+            LEFT JOIN mv_current_prices cp ON cp.product_id = a.product_id
+            WHERE a.device_id = %s AND a.triggered = TRUE
+            GROUP BY a.id, a.product_id, a.target_price, a.last_notified_at, p.name
+            ORDER BY a.last_notified_at DESC
+            """,
+            (device_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]

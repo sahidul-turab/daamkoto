@@ -7,19 +7,18 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
-    // recharts is a large dependency; it's lazy-loaded (see ProductDrawer) so it
-    // never hits the initial bundle. Raise the warning ceiling accordingly.
-    // three.js (253 kB gz) is lazy-loaded in its own chunk; it never touches the Browse
-    // critical path. Silence the size warning for this intentionally large vendor chunk.
+    // three.js (~245 kB gz, the Build view's 3D rig) is lazy-loaded in its own
+    // chunk and never touches the Browse critical path. Silence the size warning
+    // for that intentionally large vendor chunk.
     chunkSizeWarningLimit: 1000,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          charts: ["recharts"],
-          motion: ["framer-motion"],
-        },
-      },
-    },
+
+    // No manualChunks here on purpose. Forcing recharts and framer-motion into
+    // named chunks made Vite emit <link rel="modulepreload"> for both in
+    // index.html, so a first-time visitor downloaded ~190 kB gzipped of chart
+    // and animation code before any price rendered — even though nothing on the
+    // browse view uses either. Every consumer of both now sits behind a lazy
+    // import, so letting Rollup derive chunks from the actual import graph keeps
+    // them out of the entry's preload set.
   },
   server: {
     port: 5173,

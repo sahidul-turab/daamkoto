@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import type { ProductSummary } from "./types";
 import { useProductSearch } from "./lib/useProductSearch";
@@ -7,18 +7,47 @@ import { CategoryTabs } from "./components/CategoryTabs";
 import { FilterSidebar } from "./components/FilterSidebar";
 import { FilterChips } from "./components/FilterChips";
 import { ProductGrid } from "./components/ProductGrid";
-import { ProductDrawer } from "./components/ProductDrawer";
-import { WatchlistPanel } from "./components/WatchlistPanel";
-import { Chatbot } from "./components/Chatbot";
 import { Pagination } from "./components/Pagination";
-import { CommandPalette } from "./components/CommandPalette";
-import { BuildStudio } from "./components/build/BuildStudio";
-import { ScraperDashboard } from "./components/ScraperDashboard";
+
+// Everything below is off the browse view's first paint: three other views the
+// user has to navigate to, and four overlays that only exist once opened. They
+// are also, between them, the only remaining consumers of framer-motion — so
+// splitting them here is what keeps that library (40 kB gzipped) out of the
+// bundle a first-time visitor downloads before seeing a single price.
+const ProductDrawer   = lazy(() => import("./components/ProductDrawer").then((m) => ({ default: m.ProductDrawer })));
+const WatchlistPanel  = lazy(() => import("./components/WatchlistPanel").then((m) => ({ default: m.WatchlistPanel })));
+const Chatbot         = lazy(() => import("./components/Chatbot").then((m) => ({ default: m.Chatbot })));
+const CommandPalette  = lazy(() => import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })));
+const DealsView       = lazy(() => import("./components/DealsView").then((m) => ({ default: m.DealsView })));
+const BuildStudio     = lazy(() => import("./components/build/BuildStudio").then((m) => ({ default: m.BuildStudio })));
+const ScraperDashboard = lazy(() => import("./components/ScraperDashboard").then((m) => ({ default: m.ScraperDashboard })));
 import { useBuild } from "./lib/useBuild";
 import { useWatchlist } from "./lib/useWatchlist";
 import { useUrlFilters } from "./lib/useUrlFilters";
+import { prefetchAllCategories } from "./lib/prefetch";
 import { slotForCategory } from "./lib/buildConfig";
+import { CATEGORIES } from "./config";
 import { Check, SlidersHorizontal } from "lucide-react";
+
+/** Latches to true the first time `active` is true, and stays there. */
+function useLatch(active: boolean): boolean {
+  const [everActive, setEverActive] = useState(active);
+  useEffect(() => {
+    if (active) setEverActive(true);
+  }, [active]);
+  return everActive || active;
+}
+
+/** Placeholder while a lazily-loaded view's chunk arrives. */
+function ViewLoading() {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="skeleton h-40 rounded-2xl" />
+      ))}
+    </div>
+  );
+}
 
 export default function App() {
   const {
@@ -35,9 +64,18 @@ export default function App() {
   const [view, setView] = useState<View>(() => {
     if (window.location.hash.startsWith("#build"))   return "build";
     if (window.location.hash.startsWith("#scraper")) return "scraper";
+    if (window.location.hash.startsWith("#deals"))   return "deals";
     return "browse";
   });
   const [addedToast, setAddedToast] = useState<string | null>(null);
+
+  // An overlay's chunk is only worth downloading once the user has actually
+  // reached for it. These latch on first open and never go back to false, so
+  // the component stays mounted and keeps its close animation afterwards.
+  const drawerEverOpened    = useLatch(selected !== null);
+  const chatEverOpened      = useLatch(chatOpen);
+  const paletteEverOpened   = useLatch(paletteOpen);
+  const watchlistEverOpened = useLatch(watchlistOpen);
 
   const { build, setPart, addLine, setQty, removeLine, setLineRetailer, removePart, clear, shareUrl, count: buildCount } = useBuild();
   const { items: watchlist, isWatched, toggle: toggleWatch, remove: removeWatched } = useWatchlist();
@@ -49,6 +87,14 @@ export default function App() {
       .then((r) => setRetailerCount(Array.isArray(r) ? r.length : 0))
       .catch(() => void 0);
   }, []);
+
+  // Warm the other category tabs while the browser is idle, so switching tabs
+  // costs a render rather than a round trip. Only in the browse view — there is
+  // no point speculating on data the user is not about to look at.
+  useEffect(() => {
+    if (view !== "browse") return;
+    return prefetchAllCategories(category.db);
+  }, [view, category.db]);
 
   // "Add to Build" — called from ProductCard / ProductDrawer. Adds the product and
   // redirects to the build view so the user immediately sees their updated build.
@@ -114,20 +160,28 @@ export default function App() {
 
       <main className="mx-auto max-w-[1320px] px-4 py-6 md:px-6">
         {view === "scraper" ? (
-          <ScraperDashboard />
+          <Suspense fallback={<ViewLoading />}>
+            <ScraperDashboard />
+          </Suspense>
+        ) : view === "deals" ? (
+          <Suspense fallback={<ViewLoading />}>
+            <DealsView onOpenProduct={setSelected} />
+          </Suspense>
         ) : view === "build" ? (
-          <BuildStudio
-            build={build}
-            onSetPart={setPart}
-            onAddLine={addLine}
-            onRemoveLine={removeLine}
-            onSetQty={setQty}
-            onSetLineRetailer={setLineRetailer}
-            onRemove={removePart}
-            onClear={clear}
-            onShare={shareUrl}
-            onOpenProduct={setSelected}
-          />
+          <Suspense fallback={<ViewLoading />}>
+            <BuildStudio
+              build={build}
+              onSetPart={setPart}
+              onAddLine={addLine}
+              onRemoveLine={removeLine}
+              onSetQty={setQty}
+              onSetLineRetailer={setLineRetailer}
+              onRemove={removePart}
+              onClear={clear}
+              onShare={shareUrl}
+              onOpenProduct={setSelected}
+            />
+          </Suspense>
         ) : (
           <>
             <CategoryTabs active={category} onSelect={onSelectCategory} />
@@ -184,28 +238,46 @@ export default function App() {
         </div>
       )}
 
-      <CommandPalette
-        open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        onSelect={setSelected}
-      />
+      {/* Overlays mount on first open and then stay mounted, so their chunk is
+          never fetched for a visitor who only browses — but once loaded, the
+          open/close exit animations still have a component to run against. */}
+      {paletteEverOpened && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open={paletteOpen}
+            onClose={() => setPaletteOpen(false)}
+            onSelect={setSelected}
+          />
+        </Suspense>
+      )}
 
-      <WatchlistPanel
-        open={watchlistOpen}
-        onClose={() => setWatchlistOpen(false)}
-        items={watchlist}
-        onRemove={removeWatched}
-        onOpen={setSelected}
-      />
+      {watchlistEverOpened && (
+        <Suspense fallback={null}>
+          <WatchlistPanel
+            open={watchlistOpen}
+            onClose={() => setWatchlistOpen(false)}
+            items={watchlist}
+            onRemove={removeWatched}
+            onOpen={setSelected}
+          />
+        </Suspense>
+      )}
 
-      <ProductDrawer
-        product={selected}
-        bundleOnly={filters.bundleOnly}
-        onClose={() => setSelected(null)}
-        onAddToBuild={addToBuild}
-        isWatched={selected ? isWatched(selected.id) : false}
-        onToggleWatch={toggleWatch}
-      />
+      {drawerEverOpened && (
+        <Suspense fallback={null}>
+          <ProductDrawer
+            product={selected}
+            bundleOnly={filters.bundleOnly}
+            onClose={() => setSelected(null)}
+            onAddToBuild={addToBuild}
+            isWatched={selected ? isWatched(selected.id) : false}
+            onToggleWatch={toggleWatch}
+          />
+        </Suspense>
+      )}
+
+      {chatEverOpened && (
+      <Suspense fallback={null}>
       <Chatbot
         open={chatOpen}
         onClose={() => setChatOpen(false)}
@@ -213,7 +285,35 @@ export default function App() {
           setChatOpen(false);
           setSelected(p);
         }}
+        onAddToBuild={(_productId, _slot) => {
+          // Agent requested add-to-build — switch to build view.
+          // Full integration (auto-add by ID) is a future enhancement.
+          setView("build");
+        }}
+        onApplyFilters={(cat, specs) => {
+          // Agent applied filters — switch to browse with those filters
+          const found = CATEGORIES.find((c) => c.db === cat || c.label === cat);
+          if (found) onSelectCategory(found);
+          if (Object.keys(specs).length > 0) patchFilters({ specs });
+          setChatOpen(false);
+          setView("browse");
+        }}
+        onOpenDeals={() => {
+          setChatOpen(false);
+          setView("deals");
+        }}
+        context={{
+          category: category.db || null,
+          filters: filters as unknown as Record<string, unknown>,
+          build_slots: Object.fromEntries(
+            Object.entries(build).flatMap(([slot, lines]) =>
+              lines && lines.length > 0 ? [[slot, lines[0].product.id]] : []
+            )
+          ),
+        }}
       />
+      </Suspense>
+      )}
 
       <footer className="mx-auto max-w-[1320px] px-6 py-10 text-center text-xs text-ink-4">
         DaamKoto · Prices in BDT, updated on every scrape · Bangladesh

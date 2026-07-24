@@ -10,10 +10,27 @@
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      Loaded without blocking first paint. As a plain stylesheet this sits on the
+      critical path: the browser will not paint anything until it has fetched
+      Google's CSS and then the font files behind it — two extra round trips
+      before a single product is visible. Requesting it as `media="print"` makes
+      it non-blocking, and flipping the media on load applies it as usual. The
+      body has a system-font fallback, so text renders immediately and reflows
+      to Inter when it arrives (`display=swap`).
+    -->
     <link
+      rel="preload"
+      as="style"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
-      rel="stylesheet"
+      onload="this.onload=null;this.rel='stylesheet'"
     />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      />
+    </noscript>
   </head>
   <body>
     <div id="root"></div>

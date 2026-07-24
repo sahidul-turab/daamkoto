@@ -70,7 +70,11 @@ Endpoints:
 - `GET /products/{id}` — single product with all listings
 - `GET /products/{id}/seller-specs` — per-retailer raw spec comparison
 - `GET /products/{id}/history` — full price history
-- `POST /chat` — Claude AI chatbot (translates NL → query params)
+- `POST /chat` — Agentic AI assistant (multi-tool: search, compat, build, history, deals)
+- `GET /deals` — biggest recent price drops across all retailers
+- `POST /build/plan` — AI build-from-budget
+- `POST /build/check` — compatibility check for a set of part IDs
+- `POST /alerts` — create a price-drop alert; `GET /alerts` — list; `DELETE /alerts/{id}`
 - `GET /scrapers/status` — freshness, run history, log tail
 - `POST /scrapers/run` — trigger a background pipeline run (concurrency-safe)
 
@@ -101,7 +105,7 @@ Background daemon that cycles through all 13 categories in round-robin order.
 | Frontend | React 18 + Vite 6 + Tailwind CSS v4 |
 | Charts | Recharts |
 | Animations | Framer Motion |
-| AI chatbot | Anthropic Claude API |
+| AI agent | Groq llama-3.3-70b (fast) + Gemini 2.0 Flash (reasoning) — both free |
 | Env config | python-dotenv |
 | Virtual env | `venv/` (always activate before running Python) |
 
@@ -186,7 +190,8 @@ Or trigger a single run from the **Scraper** tab in the React frontend UI.
 - [x] database/load.py verified — 408 products, 121 prices
 - [x] FastAPI backend — 9 endpoints, connection pool, CORS, Swagger UI
 - [x] React frontend (frontend-react/) — Browse, Build, Scraper views; dark premium UI
-- [x] AI chatbot layer (Claude API) — translates NL → query params
+- [x] AI chatbot layer (Groq/Gemini — both free) — translates NL → query params
+- [x] Agentic AI assistant (multi-tool: search, price history, compat, build-from-budget, deals)
 - [x] Ryans scraper — 154 products, 8 pages, Cloudflare bypass
 - [x] Rich category-specific specs: JSONB specs dict; GIN index; 20+ filter params
 - [x] Expanded to 13 categories (RAM Desktop, RAM Laptop, GPU, Processor, Motherboard, SSD, Portable SSD, HDD, Portable HDD, PSU, CPU Cooler, Casing Cooler, Casing)
@@ -201,6 +206,14 @@ Or trigger a single run from the **Scraper** tab in the React frontend UI.
 - [x] scheduler.py daemon — round-robin categories, 12h cycle, DB run tracking
 - [x] database/migration_v5_scraper_runs.sql — scraper_runs table
 - [x] Streamlit frontend removed — React is the sole frontend
+- [x] Agent system: backend/agent.py + tools.py + llm.py + compat.py
+- [x] Deals feed: GET /deals + DealsView.tsx
+- [x] Build-from-budget: POST /build/plan
+- [x] Compatibility advisor: POST /build/check
+- [x] Price-drop alerts: database/migration_v6_alerts.sql + alert endpoints
+- [x] Deals view added to Header navigation
+- [x] Chatbot rebuilt to render rich blocks + execute UI actions
+- [ ] Apply migration_v6_alerts.sql to populate alerts table
 - [ ] Run pipeline for all categories across all 13 retailers to fully populate DB
 - [ ] Techland scrapers for remaining categories (casing, laptop_ram, portable_hdd, portable_ssd)
 - [ ] StarTech scrapers for new categories (laptop_ram, casing_cooler, portable_hdd, portable_ssd)

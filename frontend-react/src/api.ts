@@ -1,11 +1,15 @@
 import type {
+  Alert,
+  ChatContext,
   ChatResponse,
+  Deal,
   ProductHistory,
   ProductList,
   ProductSummary,
   ScraperStatus,
   SellerSpecs,
 } from "./types";
+import { prefetch as swrPrefetch, swr } from "./lib/swr";
 
 // In dev, Vite proxies /api -> http://127.0.0.1:8000 (see vite.config.ts).
 // Override with VITE_API_BASE for a deployed backend.
@@ -17,53 +21,157 @@ class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
+/**
+ * Build the request URL for a GET endpoint.
+ *
+ * Exported because it doubles as the cache key: two calls that produce the same
+ * URL are the same request, which is exactly the identity the SWR layer needs.
+ * Params are sorted so key order in the caller can never split the cache.
+ */
+export function buildUrl(path: string, params?: Record<string, unknown>): string {
   const url = new URL(BASE + path, window.location.origin);
   if (params) {
-    for (const [k, v] of Object.entries(params)) {
+    for (const [k, v] of Object.entries(params).sort(([a], [b]) => a.localeCompare(b))) {
       if (v === undefined || v === null || v === "") continue;
       url.searchParams.set(k, String(v));
     }
   }
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new ApiError(res.status, `${path} → ${res.status}`);
+  return url.toString();
+}
+
+async function fetchJson<T>(url: string, label: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new ApiError(res.status, `${label} → ${res.status}`);
   return res.json() as Promise<T>;
+}
+
+async function get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
+  return fetchJson<T>(buildUrl(path, params), path);
+}
+
+/** Same as `get`, but served through the client cache (see lib/swr.ts). */
+function cachedGet<T>(
+  path: string,
+  params?: Record<string, unknown>,
+  onData?: (data: T, isStale: boolean) => void,
+): Promise<T> {
+  const url = buildUrl(path, params);
+  return swr<T>(url, () => fetchJson<T>(url, path), onData);
 }
 
 export const api = {
   health: () => get<{ status: string }>("/health"),
 
-  categories: () => get<string[]>("/categories"),
+  categories: () => cachedGet<string[]>("/categories"),
 
-  brands: (category?: string) => get<string[]>("/brands", { category }),
+  brands: (category?: string) => cachedGet<string[]>("/brands", { category }),
 
-  retailers: () => get<unknown[]>("/retailers"),
+  retailers: () => cachedGet<unknown[]>("/retailers"),
 
   specValues: (category: string, key: string) =>
-    get<string[]>("/specs/values", { category, key }),
+    cachedGet<string[]>("/specs/values", { category, key }),
 
-  products: (params: Record<string, unknown>) =>
-    get<ProductList>("/products", params),
+  /**
+   * Product search. `onData` fires up to twice: once with cached data (possibly
+   * stale) so the grid can paint immediately, then once more when the network
+   * response lands. Callers that just want the final value can await instead.
+   */
+  products: (
+    params: Record<string, unknown>,
+    onData?: (data: ProductList, isStale: boolean) => void,
+  ) => cachedGet<ProductList>("/products", params, onData),
 
-  product: (id: number) => get<ProductSummary>(`/products/${id}`),
+  /** Warm the cache for a product query the user has not asked for yet. */
+  prefetchProducts: (params: Record<string, unknown>) => {
+    const url = buildUrl("/products", params);
+    swrPrefetch(url, () => fetchJson<ProductList>(url, "/products"));
+  },
 
-  sellerSpecs: (id: number) => get<SellerSpecs>(`/products/${id}/seller-specs`),
+  product: (id: number) => cachedGet<ProductSummary>(`/products/${id}`),
+
+  sellerSpecs: (id: number) => cachedGet<SellerSpecs>(`/products/${id}/seller-specs`),
 
   history: (id: number, retailer?: string) =>
-    get<ProductHistory>(`/products/${id}/history`, { retailer, limit: 500 }),
+    cachedGet<ProductHistory>(`/products/${id}/history`, { retailer, limit: 500 }),
 
   chat: async (
     message: string,
     history: { role: string; content: string }[],
+    context?: ChatContext,
   ): Promise<ChatResponse> => {
     const res = await fetch(new URL(BASE + "/chat", window.location.origin), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history }),
+      body: JSON.stringify({ message, history, context }),
     });
     if (!res.ok) throw new ApiError(res.status, `/chat → ${res.status}`);
     return res.json() as Promise<ChatResponse>;
   },
+
+  // ── Deals ────────────────────────────────────────────────────────────────
+
+  deals: (params?: { category?: string; limit?: number }) =>
+    cachedGet<{ deals: Deal[]; count: number }>("/deals", params),
+
+  // ── Build plan / check ───────────────────────────────────────────────────
+
+  planBuild: async (params: {
+    budget_bdt: number;
+    use_case?: string;
+    socket_preference?: string;
+    include_gpu?: boolean;
+  }) => {
+    const res = await fetch(new URL(BASE + "/build/plan", window.location.origin), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) throw new ApiError(res.status, `/build/plan → ${res.status}`);
+    return res.json();
+  },
+
+  checkBuild: async (slots: {
+    cpu_id?: number; mobo_id?: number; ram_id?: number;
+    gpu_id?: number; psu_id?: number; case_id?: number;
+    cooler_id?: number; storage_id?: number;
+  }) => {
+    const res = await fetch(new URL(BASE + "/build/check", window.location.origin), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(slots),
+    });
+    if (!res.ok) throw new ApiError(res.status, `/build/check → ${res.status}`);
+    return res.json();
+  },
+
+  // ── Alerts ───────────────────────────────────────────────────────────────
+
+  createAlert: async (deviceId: string, productId: number, targetPrice: number) => {
+    const res = await fetch(new URL(BASE + "/alerts", window.location.origin), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device_id: deviceId, product_id: productId, target_price: targetPrice }),
+    });
+    if (!res.ok) throw new ApiError(res.status, `/alerts → ${res.status}`);
+    return res.json() as Promise<Alert>;
+  },
+
+  listAlerts: (deviceId: string) =>
+    get<Alert[]>("/alerts", { device_id: deviceId }),
+
+  deleteAlert: async (deviceId: string, alertId: number) => {
+    const res = await fetch(
+      new URL(BASE + `/alerts/${alertId}?device_id=${encodeURIComponent(deviceId)}`, window.location.origin),
+      { method: "DELETE" },
+    );
+    if (!res.ok) throw new ApiError(res.status, `/alerts/${alertId} → ${res.status}`);
+    return res.json();
+  },
+
+  triggeredAlerts: (deviceId: string) =>
+    get<Alert[]>("/alerts/triggered", { device_id: deviceId }),
+
+  // ── Scraper ──────────────────────────────────────────────────────────────
 
   scraperStatus: () => get<ScraperStatus>("/scrapers/status"),
 

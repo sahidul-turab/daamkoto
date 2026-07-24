@@ -214,6 +214,40 @@ def run_category(category: str, retailers: list[str], dry_run: bool = False) -> 
 
 
 # ---------------------------------------------------------------------------
+# Alert evaluation — runs after each full sweep
+# ---------------------------------------------------------------------------
+
+def _evaluate_alerts(dry_run: bool = False) -> None:
+    """
+    Check all untriggered price-drop alerts against current prices.
+    Marks triggered ones in the DB. The alerts table must exist
+    (migration_v6_alerts.sql). Silently skips if the table doesn't exist yet.
+    """
+    if dry_run:
+        log.info("Alerts: skipping (dry-run mode)")
+        return
+    try:
+        conn = _db_connect()
+        try:
+            from backend import queries as _queries  # lazy import
+            triggered = _queries.evaluate_alerts(conn)
+            if triggered:
+                log.info(
+                    "Alerts: %d triggered — %s",
+                    len(triggered),
+                    [f"{t['product_name']} ≤ ৳{t['target_price']}" for t in triggered],
+                )
+            else:
+                log.info("Alerts: none triggered this sweep")
+        except Exception as exc:
+            log.warning("Alerts evaluation error: %s", exc)
+        finally:
+            conn.close()
+    except Exception as exc:
+        log.warning("Could not connect for alert evaluation: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
 
@@ -258,6 +292,7 @@ def main() -> None:
     if args.once:
         for cat in categories:
             run_category(cat, retailers, args.dry_run)
+        _evaluate_alerts(args.dry_run)
         log.info("--once complete, exiting.")
         return
 
@@ -267,6 +302,8 @@ def main() -> None:
 
         for cat in categories:
             run_category(cat, retailers, args.dry_run)
+
+        _evaluate_alerts(args.dry_run)
 
         elapsed = time.monotonic() - sweep_start
         wait    = max(0.0, interval_s - elapsed)

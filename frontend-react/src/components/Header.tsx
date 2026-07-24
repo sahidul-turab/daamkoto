@@ -1,6 +1,6 @@
-import { Activity, Bookmark, Boxes, Search, Sparkles, Store, X } from "lucide-react";
+import { Activity, Bookmark, Boxes, Search, Sparkles, Store, Tag, X } from "lucide-react";
 
-export type View = "browse" | "build" | "scraper";
+export type View = "browse" | "build" | "deals" | "scraper";
 
 interface Props {
   search: string;
@@ -67,6 +67,15 @@ export function Header({
                 {buildCount}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => onViewChange("deals")}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors ${
+              view === "deals" ? "bg-brand-strong text-white" : "text-ink-3 hover:text-ink"
+            }`}
+            title="Daily price-drop deals"
+          >
+            <Tag className="h-4 w-4" /> Deals
           </button>
           <button
             onClick={() => onViewChange("scraper")}

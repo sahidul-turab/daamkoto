@@ -1,0 +1,75 @@
+# Keeps the live API awake so visitors never pay a cold start.
+#
+# Why this exists
+# ---------------
+# Render's free tier spins a service down after ~15 minutes with no traffic, and
+# the next request has to wait ~30-50s for it to boot. Neon's free tier suspends
+# an idle database on a similar timer, adding a few more seconds on top. For a
+# site that mostly gets sporadic visits, that means a large share of real users
+# were hitting the worst possible case: a cold backend AND a cold database.
+#
+# Pinging on a schedule keeps both hot, which turns that 30-50s wait into the
+# ~250ms warm response the API is actually capable of. The ping uses
+# /health?deep=1 so it round-trips Postgres too - hitting only the web process
+# would leave the database free to suspend underneath it.
+#
+# Free-tier budget
+# ----------------
+# Render gives 750 instance-hours/month and a month is ~730 hours, so keeping
+# one service up around the clock would leave no headroom for anything else.
+# Instead this runs 00:00-20:00 UTC = 06:00-02:00 Asia/Dhaka: awake for every
+# waking hour in Bangladesh, asleep in the small hours. That is ~608 h/month,
+# a comfortable margin. Nobody shopping for RAM at 4am pays more than the
+# original cold start would have cost them anyway.
+#
+# The nightly scrape (daily-scrape.yml, 20:00 UTC) runs inside the sleep window,
+# which is fine - it writes to Neon directly and never touches this API.
+
+name: Keep API warm
+
+on:
+  schedule:
+    # Every 10 minutes during Bangladesh waking hours (06:00-02:00 BDT).
+    # GitHub delays scheduled runs under load, so each run pings several times
+    # to bridge the gap rather than relying on the cron firing punctually.
+    - cron: "*/10 0-19 * * *"
+  workflow_dispatch:
+
+# A late run must not stack on top of the next one.
+concurrency:
+  group: keep-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # Override in Settings -> Secrets and variables -> Actions -> Variables
+      # if the backend URL ever changes.
+      API_URL: ${{ vars.API_URL || 'https://daamkoto-api.onrender.com' }}
+
+    steps:
+      - name: Ping until the next run takes over
+        run: |
+          # 4 pings, 3 minutes apart, covers ~9 minutes of the 10-minute cycle.
+          # If a scheduled run is skipped or delayed, the overlap means the
+          # service still sees traffic well inside Render's 15-minute idle timer.
+          for i in 1 2 3 4; do
+            if [ "$i" -gt 1 ]; then sleep 180; fi
+
+            # --max-time 90 so a genuinely cold boot is waited out, not aborted.
+            code=$(curl -s -o /tmp/health.json -w '%{http_code}' \
+                        --max-time 90 "$API_URL/health?deep=1" || echo 000)
+            echo "ping $i -> HTTP $code"
+            cat /tmp/health.json 2>/dev/null || true
+            echo
+
+            # A non-200 here is worth surfacing, but only the last attempt
+            # decides the job: a single blip mid-cycle is not an outage.
+            if [ "$i" = 4 ] && [ "$code" != "200" ]; then
+              echo "::error::API unhealthy after 4 attempts (last status $code)"
+              exit 1
+            fi
+          done

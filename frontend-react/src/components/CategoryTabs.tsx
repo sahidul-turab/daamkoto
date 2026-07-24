@@ -1,6 +1,14 @@
-import { motion } from "framer-motion";
 import { CATEGORIES, type CategoryDef } from "../config";
+import { prefetchCategory } from "../lib/prefetch";
 import { CategoryIcon } from "./Icon";
+
+// The active pill used to be a framer-motion shared-layout animation. That made
+// framer-motion (40 kB gzipped) a dependency of the very first screen, since the
+// tabs render above the product grid — 40 kB the user had to download before any
+// price appeared. Every other consumer of framer-motion is behind a lazy import,
+// so expressing this one indicator in CSS keeps the whole library off the
+// critical path. The pill now appears instead of sliding; on a slow connection
+// that is a trade the user comes out well ahead on.
 
 interface Props {
   active: CategoryDef;
@@ -16,6 +24,11 @@ export function CategoryTabs({ active, onSelect }: Props) {
           <button
             key={c.db}
             onClick={() => onSelect(c)}
+            // Fetch on intent rather than on click. The gap between a pointer
+            // landing on a tab and the click firing is usually enough to cover
+            // the whole round trip, so the switch renders instantly.
+            onPointerEnter={() => prefetchCategory(c)}
+            onFocus={() => prefetchCategory(c)}
             className={`relative flex shrink-0 items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors duration-200 ${
               isActive
                 ? "border-brand/40 text-white"
@@ -23,11 +36,9 @@ export function CategoryTabs({ active, onSelect }: Props) {
             }`}
           >
             {isActive && (
-              <motion.span
-                layoutId="cat-active"
-                className="absolute inset-0 rounded-xl bg-brand-strong/15"
+              <span
+                className="absolute inset-0 rounded-xl bg-brand-strong/15 animate-fade-in"
                 style={{ boxShadow: "0 0 0 1px rgba(244,63,75,0.4) inset" }}
-                transition={{ type: "spring", stiffness: 400, damping: 32 }}
               />
             )}
             <CategoryIcon
