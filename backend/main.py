@@ -575,6 +575,20 @@ def list_products(
     va_rating: str | None = Query(None, description="[UPS] e.g. 650VA, 1200VA, 2000VA"),
     ups_type: str | None = Query(None, description="[UPS] Offline, Line Interactive, Online, Mini UPS"),
     backup_time: str | None = Query(None, description="[UPS] e.g. 20 min, 1 hr"),
+    # ── Speaker / webcam / chair / printer / mousepad / gamepad ──────────────
+    channels: str | None = Query(None, description="[Speaker] 2.0, 2.1, 5.1, 7.1, Soundbar"),
+    power_output: str | None = Query(None, description="[Speaker] e.g. 30W, 120W"),
+    webcam_resolution: str | None = Query(None, description="[Webcam] 720p, 1080p, 2K, 4K"),
+    fps: str | None = Query(None, description="[Webcam] e.g. 30 FPS, 60 FPS"),
+    material: str | None = Query(None, description="[Gaming Chair] Mesh, PU Leather, Leather, Fabric"),
+    footrest: bool | None = Query(None, description="[Gaming Chair] Has a footrest"),
+    printer_type: str | None = Query(None, description="[Printer] Laser, Inkjet, Dot Matrix, Thermal, Label"),
+    functions: str | None = Query(None, description="[Printer] Multifunction or Print Only"),
+    color_output: str | None = Query(None, description="[Printer] Color or Mono"),
+    duplex: bool | None = Query(None, description="[Printer] Automatic duplex printing"),
+    pad_size: str | None = Query(None, description="[Mouse Pad] Small, Medium, Large, XL, XXL, Extended, or WxHmm"),
+    platform: str | None = Query(None, description="[Gamepad] PC, PS4, PS5, Xbox, Nintendo Switch"),
+    vibration: bool | None = Query(None, description="[Gamepad] Vibration / rumble feedback"),
 ):
     """
     Search and filter products. Returns current cheapest price per product across all retailers.
@@ -635,6 +649,19 @@ def list_products(
         ("va_rating", va_rating),
         ("ups_type", ups_type),
         ("backup_time", backup_time),
+        ("channels", channels),
+        ("power_output", power_output),
+        ("webcam_resolution", webcam_resolution),
+        ("fps", fps),
+        ("material", material),
+        ("footrest", footrest),
+        ("printer_type", printer_type),
+        ("functions", functions),
+        ("color_output", color_output),
+        ("duplex", duplex),
+        ("pad_size", pad_size),
+        ("platform", platform),
+        ("vibration", vibration),
     ]:
         if value is not None:
             specs_filter[key_name] = value

@@ -377,7 +377,9 @@ def main():
                         choices=["ram", "laptop_ram", "gpu", "processor", "motherboard",
                                  "ssd", "portable_ssd", "hdd", "portable_hdd",
                                  "psu", "cooler", "casing_cooler", "casing", "odd", "monitor",
-                                 "keyboard", "mouse", "headset", "ups"],
+                                 "keyboard", "mouse", "headset", "ups",
+                                 "speaker", "webcam", "gaming_chair",
+                                 "printer", "mousepad", "gamepad"],
                         default="ram",
                         help="Product category — determines which clean files to load (default: ram)")
     parser.add_argument("--threshold", type=int, default=SIMILARITY_THRESHOLD,

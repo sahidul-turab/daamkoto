@@ -102,6 +102,82 @@ CATEGORY_PATHS = {
         "pchouse":        "/headphones-headsets",
     },
 
+    # ── Tier 2 ───────────────────────────────────────────────────────────────
+
+    "speaker": {
+        "ryans":          "/category/all-speaker",
+        "techland":       "/tv-home-entertainment/multimedia-speakers",
+        "potakait":       "/bluetooth-speaker",
+        "ultratech":      "/speaker",
+        "binarylogic":    "/speaker",
+        "skyland":        "/sound-system/speaker-and-home-theater",
+        "creatus":        "/speaker",
+        "selltech":       "/Bluetooth-Speakers",
+        "computersource": "/speaker",
+        "trusttech":      "/categories/speaker",
+        "pchouse":        "/speakers",
+    },
+
+    "webcam": {
+        "startech":  "/accessories/webcam",
+        "ryans":     "/category/camera-webcam",
+        "techland":  "/accessories/brand-webcam",
+        "potakait":  "/webcams",
+        "ultratech": "/webcam",
+        "skyland":   "/accessories/webcam",
+        "creatus":   "/webcam",
+        "selltech":  "/Webcam",
+    },
+
+    "gaming_chair": {
+        "startech":  "/gaming-chair",
+        "ryans":     "/category/gaming-component-gaming-chair",
+        "potakait":  "/gaming-chair",
+        "ucc":       "/gaming-chair",
+        "ultratech": "/gaming-chair",
+        "skyland":   "/gaming/gaming-chair",
+        "creatus":   "/gaming-chair",
+        "trusttech": "/categories/gaming-chair",
+        "pchouse":   "/gaming-chair",
+    },
+
+    "printer": {
+        "startech":    "/printer",
+        "ryans":       "/category/document-printer-laser-printer",
+        "techland":    "/office-solution/printer",
+        "potakait":    "/printers",
+        "ultratech":   "/printer",
+        "binarylogic": "/printer",
+        "skyland":     "/office-equipment/printer",
+        "creatus":     "/printer",
+        "selltech":    "/Printer",
+        "trusttech":   "/categories/printer",
+    },
+
+    "mousepad": {
+        "startech":  "/accessories/mouse-pad",
+        "ryans":     "/category/desktop-component-mouse-pad",
+        "ultratech": "/mouse-pad",
+        "skyland":   "/accessories/mouse-pad",
+        "creatus":   "/mouse-pad",
+        "selltech":  "/Mouse-Pad",
+        "pchouse":   "/mouse-pad",
+    },
+
+    # Thinnest of the six. StarTech's only match was /gaming-console, which
+    # lists PlayStations and Xboxes rather than controllers - left out on
+    # purpose, since a category polluted with consoles is worse than a category
+    # with fewer shops. Ryans, Techland, UCC, SellTech, BinaryLogic and
+    # TrustTech have no browsable gamepad listing at all.
+    "gamepad": {
+        "potakait":       "/gamepads",
+        "ultratech":      "/gamepad",
+        "skyland":        "/gaming/gamepad",
+        "creatus":        "/gamepad",
+        "computersource": "/gamepad",
+        "pchouse":        "/gamepad",
+    },
+
     # ucc, binarylogic and computersource have no browsable UPS listing.
     "ups": {
         "startech":    "/ups",

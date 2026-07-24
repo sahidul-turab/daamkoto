@@ -142,7 +142,9 @@ def main() -> None:
         choices=["ram", "laptop_ram", "gpu", "processor", "motherboard",
                  "ssd", "portable_ssd", "hdd", "portable_hdd",
                  "psu", "cooler", "casing_cooler", "casing", "odd", "monitor",
-                 "keyboard", "mouse", "headset", "ups"],
+                 "keyboard", "mouse", "headset", "ups",
+                 "speaker", "webcam", "gaming_chair", "printer",
+                 "mousepad", "gamepad"],
         default="ram",
         help="Product category (default: ram)",
     )
@@ -188,6 +190,12 @@ def main() -> None:
             "mouse":         "MOUSE",
             "headset":       "HEADSET",
             "ups":           "UPS",
+            "speaker":       "SPEAKER",
+            "webcam":        "WEBCAM",
+            "gaming_chair":  "GAMING CHAIR",
+            "printer":       "PRINTER",
+            "mousepad":      "MOUSE PAD",
+            "gamepad":       "GAMEPAD",
         }.get(cat, cat.upper())
         matched_file = f"data/processed/matched_{cat}_products.json"
         load_cmd = ["database/load.py", "--category", db_category, "--input", matched_file]

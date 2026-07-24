@@ -212,6 +212,72 @@ export const CATEGORIES: CategoryDef[] = [
       ]),
     ],
   },
+  {
+    label: "Speaker", db: "SPEAKER", icon: "Speaker", filters: [
+      sel("channels", "Channels", "channels", [
+        "2.0", "2.1", "5.1", "7.1", "Soundbar",
+      ]),
+      sel("connectivity", "Connectivity", "connectivity", [
+        "Wired", "Wireless", "Bluetooth", "Dual Wireless",
+      ]),
+      sel("power_output", "Power Output", "power_output", [
+        "10W", "20W", "30W", "60W", "100W", "120W",
+      ]),
+      bool("rgb", "RGB"),
+    ],
+  },
+  {
+    label: "Webcam", db: "WEBCAM", icon: "Webcam", filters: [
+      sel("webcam_resolution", "Resolution", "webcam_resolution", [
+        "720p", "1080p", "2K", "4K",
+      ]),
+      sel("fps", "Frame Rate", "fps", ["30 FPS", "60 FPS"]),
+      bool("microphone", "Built-in Microphone"),
+      bool("autofocus", "Autofocus"),
+    ],
+  },
+  {
+    label: "Gaming Chair", db: "GAMING CHAIR", icon: "Armchair", filters: [
+      sel("material", "Material", "material", [
+        "Mesh", "PU Leather", "Leather", "Fabric",
+      ]),
+      bool("footrest", "Footrest"),
+      bool("massage", "Massage"),
+      bool("rgb", "RGB"),
+    ],
+  },
+  {
+    label: "Printer", db: "PRINTER", icon: "Printer", filters: [
+      sel("printer_type", "Type", "printer_type", [
+        "Laser", "Inkjet", "Dot Matrix", "Thermal", "Label",
+      ]),
+      sel("functions", "Functions", "functions", ["Multifunction", "Print Only"]),
+      sel("color_output", "Output", "color_output", ["Color", "Mono"]),
+      bool("duplex", "Auto Duplex"),
+      bool("wifi", "Wi-Fi"),
+    ],
+  },
+  {
+    label: "Mouse Pad", db: "MOUSE PAD", icon: "Square", filters: [
+      sel("pad_size", "Size", "pad_size", [
+        "Small", "Medium", "Large", "XL", "XXL", "Extended",
+      ]),
+      bool("rgb", "RGB"),
+      bool("stitched_edge", "Stitched Edge"),
+    ],
+  },
+  {
+    label: "Gamepad", db: "GAMEPAD", icon: "Gamepad2", filters: [
+      sel("platform", "Platform", "platform", [
+        "PC", "PS4", "PS5", "Xbox", "Nintendo Switch",
+      ]),
+      sel("connectivity", "Connectivity", "connectivity", [
+        "Wired", "Wireless", "Bluetooth", "Tri-Mode",
+      ]),
+      bool("vibration", "Vibration"),
+      bool("rgb", "RGB"),
+    ],
+  },
 ];
 
 export const SORT_OPTIONS: { label: string; value: string }[] = [

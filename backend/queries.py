@@ -43,6 +43,11 @@ _ALLOWED_SPEC_KEYS = {
     "headset_form", "microphone", "noise_cancelling",
     # UPS
     "va_rating", "ups_type", "backup_time",
+    # Speaker / webcam / chair / printer / mousepad / gamepad
+    "channels", "power_output", "webcam_resolution", "fps", "autofocus",
+    "material", "footrest", "massage",
+    "printer_type", "functions", "color_output", "duplex",
+    "pad_size", "stitched_edge", "platform", "vibration",
 }
 
 # ---------------------------------------------------------------------------

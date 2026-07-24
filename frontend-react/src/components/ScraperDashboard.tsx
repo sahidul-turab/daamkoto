@@ -15,6 +15,7 @@ const ALL_CATEGORIES = [
   "ssd", "portable_ssd", "hdd", "portable_hdd",
   "psu", "cooler", "casing_cooler", "casing",
   "monitor", "keyboard", "mouse", "headset", "ups",
+  "speaker", "webcam", "gaming_chair", "printer", "mousepad", "gamepad",
 ];
 
 const ALL_RETAILERS = [

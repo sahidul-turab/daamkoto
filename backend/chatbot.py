@@ -212,6 +212,10 @@ _SPEC_KEYS = {
     "headset_form", "microphone", "noise_cancelling",
     # UPS
     "va_rating", "ups_type", "backup_time",
+    # Speaker / webcam / chair / printer / mousepad / gamepad
+    "channels", "power_output", "webcam_resolution", "fps",
+    "material", "printer_type", "functions", "color_output", "duplex",
+    "pad_size", "platform",
 }
 
 

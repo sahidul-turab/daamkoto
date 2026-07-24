@@ -1802,6 +1802,207 @@ def clean_ups_record(raw: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Tier-2 peripheral helpers — speaker, webcam, gaming chair, printer,
+# mousepad, gamepad
+#
+# Same restraint as the Tier-1 peripherals: extract only what the listing title
+# actually states and return None otherwise. These titles are even thinner than
+# keyboards and mice - a mousepad is often just "Gaming Mouse Pad Large".
+# ---------------------------------------------------------------------------
+
+def extract_speaker_channels(name: str) -> str | None:
+    """Channel layout: 2.0, 2.1, 5.1, 7.1."""
+    m = re.search(r"\b([2578])\.([012])\s*(?:ch(?:annel)?)?\b", name)
+    if m:
+        return f"{m.group(1)}.{m.group(2)}"
+    if re.search(r"\bsound\s*bar\b|\bsoundbar\b", name, re.IGNORECASE):
+        return "Soundbar"
+    return None
+
+
+def extract_speaker_power(name: str) -> str | None:
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:w|watt)s?\b(?!\s*h)", name, re.IGNORECASE)
+    return f"{m.group(1).rstrip('.0') or m.group(1)}W" if m else None
+
+
+def extract_webcam_resolution(name: str) -> str | None:
+    n = name.lower()
+    if "4k" in n or "2160" in n:
+        return "4K"
+    if "2k" in n or "1440" in n or "qhd" in n:
+        return "2K"
+    if "1080" in n or "full hd" in n or "fhd" in n:
+        return "1080p"
+    if "720" in n or re.search(r"\bhd\b", n):
+        return "720p"
+    return None
+
+
+def extract_webcam_fps(name: str) -> str | None:
+    m = re.search(r"(\d{2,3})\s*fps\b", name, re.IGNORECASE)
+    return f"{m.group(1)} FPS" if m else None
+
+
+def extract_chair_material(name: str) -> str | None:
+    n = name.lower()
+    if "mesh" in n:
+        return "Mesh"
+    if "pu leather" in n or "pu-leather" in n:
+        return "PU Leather"
+    if "leather" in n:
+        return "Leather"
+    if "fabric" in n:
+        return "Fabric"
+    return None
+
+
+def extract_printer_type(name: str) -> str | None:
+    n = name.lower()
+    if "laser" in n:
+        return "Laser"
+    if "inkjet" in n or "ink jet" in n or "ink tank" in n or "inktank" in n:
+        return "Inkjet"
+    if "dot matrix" in n or "dot-matrix" in n:
+        return "Dot Matrix"
+    if "thermal" in n or "pos" in n or "receipt" in n:
+        return "Thermal"
+    if "label" in n:
+        return "Label"
+    return None
+
+
+def extract_printer_functions(name: str) -> str | None:
+    n = name.lower()
+    if any(w in n for w in ("all-in-one", "all in one", "aio", "4-in-1", "3-in-1",
+                            "multifunction", "print, scan, copy", "print scan copy")):
+        return "Multifunction"
+    if "scan" in n or "copy" in n:
+        return "Multifunction"
+    return "Print Only"
+
+
+def detect_duplex(name: str) -> bool:
+    return bool(re.search(r"\bduplex\b|double[\s-]?sided|auto\s*duplex",
+                          name, re.IGNORECASE))
+
+
+def extract_pad_size(name: str) -> str | None:
+    """Explicit dimensions win; otherwise the shop's size word."""
+    m = re.search(r"\b(\d{3,4})\s*[x×]\s*(\d{3,4})\b", name)
+    if m:
+        return f"{m.group(1)}x{m.group(2)}mm"
+    n = name.lower()
+    for word, label in (("extended", "Extended"), ("xxl", "XXL"), ("xl", "XL"),
+                        ("large", "Large"), ("medium", "Medium"), ("small", "Small")):
+        if word in n:
+            return label
+    return None
+
+
+def extract_gamepad_platform(name: str) -> str | None:
+    n = name.lower()
+    if "switch" in n and "nintendo" in n:
+        return "Nintendo Switch"
+    if "ps5" in n or "playstation 5" in n:
+        return "PS5"
+    if "ps4" in n or "playstation 4" in n:
+        return "PS4"
+    if "xbox" in n:
+        return "Xbox"
+    if "pc" in n or "windows" in n:
+        return "PC"
+    return None
+
+
+def _t2_common(raw: dict, norm_name: str, brand: str | None, specs: dict,
+               form_factor: str, capacity=None, generation=None, speed=None,
+               *key_parts) -> dict:
+    """Shared record shape for the Tier-2 cleaners."""
+    return {
+        "raw_name": raw.get("name", ""), "mpn": None,
+        "price_bdt": raw.get("price_bdt"), "in_stock": raw.get("in_stock"),
+        "product_url": raw.get("product_url"), "source": raw.get("source"),
+        "scraped_at": raw.get("scraped_at"),
+        "pc_bundle_only": bool(raw.get("pc_bundle_only", False)),
+        "name": norm_name, "brand": brand,
+        "capacity": capacity, "generation": generation,
+        "speed": speed, "latency": None, "form_factor": form_factor,
+        "match_key": _peripheral_match_key(brand, norm_name, *key_parts),
+        "specs": specs,
+    }
+
+
+def clean_speaker_record(raw: dict) -> dict:
+    n = normalize_name(raw.get("name", ""))
+    brand = extract_peripheral_brand(n)
+    channels = extract_speaker_channels(n)
+    power = extract_speaker_power(n)
+    conn = extract_connectivity(n)
+    specs = {"channels": channels, "power_output": power,
+             "connectivity": conn, "rgb": detect_rgb(n)}
+    return _t2_common(raw, n, brand, specs, "Speaker",
+                      channels, None, power, channels, power, conn)
+
+
+def clean_webcam_record(raw: dict) -> dict:
+    n = normalize_name(raw.get("name", ""))
+    brand = extract_peripheral_brand(n)
+    res = extract_webcam_resolution(n)
+    fps = extract_webcam_fps(n)
+    specs = {"webcam_resolution": res, "fps": fps,
+             "microphone": detect_mic(n), "autofocus":
+                 bool(re.search(r"auto\s*focus", n, re.IGNORECASE))}
+    return _t2_common(raw, n, brand, specs, "Webcam", res, None, fps, res, fps)
+
+
+def clean_gaming_chair_record(raw: dict) -> dict:
+    n = normalize_name(raw.get("name", ""))
+    brand = extract_peripheral_brand(n)
+    material = extract_chair_material(n)
+    specs = {"material": material,
+             "footrest": bool(re.search(r"foot\s*rest", n, re.IGNORECASE)),
+             "massage": bool(re.search(r"\bmassage\b", n, re.IGNORECASE)),
+             "rgb": detect_rgb(n)}
+    return _t2_common(raw, n, brand, specs, "Gaming Chair",
+                      material, None, None, material)
+
+
+def clean_printer_record(raw: dict) -> dict:
+    n = normalize_name(raw.get("name", ""))
+    brand = extract_peripheral_brand(n)
+    ptype = extract_printer_type(n)
+    funcs = extract_printer_functions(n)
+    colour = "Color" if re.search(r"\bcolou?r\b", n, re.IGNORECASE) else (
+        "Mono" if re.search(r"\bmono(chrome)?\b", n, re.IGNORECASE) else None)
+    specs = {"printer_type": ptype, "functions": funcs, "color_output": colour,
+             "duplex": detect_duplex(n),
+             "wifi": bool(re.search(r"\bwi-?fi\b|wireless", n, re.IGNORECASE))}
+    return _t2_common(raw, n, brand, specs, "Printer",
+                      ptype, funcs, None, ptype, funcs)
+
+
+def clean_mousepad_record(raw: dict) -> dict:
+    n = normalize_name(raw.get("name", ""))
+    brand = extract_peripheral_brand(n)
+    size = extract_pad_size(n)
+    specs = {"pad_size": size, "rgb": detect_rgb(n),
+             "stitched_edge": bool(re.search(r"stitch", n, re.IGNORECASE))}
+    return _t2_common(raw, n, brand, specs, "Mouse Pad", size, None, None, size)
+
+
+def clean_gamepad_record(raw: dict) -> dict:
+    n = normalize_name(raw.get("name", ""))
+    brand = extract_peripheral_brand(n)
+    platform = extract_gamepad_platform(n)
+    conn = extract_connectivity(n)
+    specs = {"platform": platform, "connectivity": conn,
+             "vibration": bool(re.search(r"vibrat|rumble", n, re.IGNORECASE)),
+             "rgb": detect_rgb(n)}
+    return _t2_common(raw, n, brand, specs, "Gamepad",
+                      platform, None, conn, platform, conn)
+
+
+# ---------------------------------------------------------------------------
 # ODD (Optical Disk Drive) helpers
 # ---------------------------------------------------------------------------
 
@@ -2018,7 +2219,9 @@ def main():
                         choices=["ram", "laptop_ram", "gpu", "processor", "motherboard",
                                  "ssd", "portable_ssd", "hdd", "portable_hdd",
                                  "psu", "cooler", "casing_cooler", "casing", "odd", "monitor",
-                                 "keyboard", "mouse", "headset", "ups"],
+                                 "keyboard", "mouse", "headset", "ups",
+                                 "speaker", "webcam", "gaming_chair",
+                                 "printer", "mousepad", "gamepad"],
                         default=None,
                         help="Product category — inferred from filename if omitted")
     args = parser.parse_args()
@@ -2052,6 +2255,12 @@ def main():
         "mouse":         clean_mouse_record,
         "headset":       clean_headset_record,
         "ups":           clean_ups_record,
+        "speaker":       clean_speaker_record,
+        "webcam":        clean_webcam_record,
+        "gaming_chair":  clean_gaming_chair_record,
+        "printer":       clean_printer_record,
+        "mousepad":      clean_mousepad_record,
+        "gamepad":       clean_gamepad_record,
     }
     cleaner = CLEANERS.get(category, clean_record)
 

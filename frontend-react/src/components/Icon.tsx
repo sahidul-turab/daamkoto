@@ -1,9 +1,11 @@
 import {
+  Armchair,
   BatteryCharging,
   Box,
   CircuitBoard,
   Cpu,
   Fan,
+  Gamepad2,
   HardDrive,
   Headphones,
   Keyboard,
@@ -12,6 +14,10 @@ import {
   MonitorPlay,
   Mouse,
   Power,
+  Printer,
+  Speaker,
+  Square,
+  Webcam,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,11 +26,13 @@ import {
 // config.ts must be registered here or the category loses its identity in the
 // tab bar without anything failing.
 const ICONS: Record<string, LucideIcon> = {
+  Armchair,
   BatteryCharging,
   Box,
   CircuitBoard,
   Cpu,
   Fan,
+  Gamepad2,
   HardDrive,
   Headphones,
   Keyboard,
@@ -33,6 +41,10 @@ const ICONS: Record<string, LucideIcon> = {
   MonitorPlay,
   Mouse,
   Power,
+  Printer,
+  Speaker,
+  Square,
+  Webcam,
 };
 
 export function CategoryIcon({
