@@ -1,0 +1,129 @@
+# Daily price refresh for DaamKoto.
+#
+# Runs the full scrape -> normalize -> match -> load pipeline against the live
+# Neon database, so the deployed site refreshes itself with no local machine
+# involved. This replaces running `python scheduler.py` by hand.
+#
+# Schedule: 20:00 UTC = 02:00 Asia/Dhaka (next day). A full sweep of all 13
+# categories takes ~2.7h based on run history, finishing around 04:40 BDT while
+# the retailer sites are quiet.
+#
+# Secrets required (Settings -> Secrets and variables -> Actions):
+#   DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD   (from the Neon pooled URL)
+
+name: Daily scrape
+
+on:
+  schedule:
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      categories:
+        description: "Space-separated categories (blank = all 13)"
+        required: false
+        default: ""
+      retailers:
+        description: "Space-separated retailers (blank = all 13)"
+        required: false
+        default: ""
+
+# Never let two sweeps overlap - they would fight over the same tables and the
+# REFRESH MATERIALIZED VIEW lock. A queued run waits instead of cancelling, so a
+# manual test never silently kills the nightly job.
+concurrency:
+  group: daily-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # Full sweep is ~2.7h; 5.5h leaves headroom but stays under the 6h hard cap
+    # so the job fails cleanly with logs rather than being killed by GitHub.
+    timeout-minutes: 330
+
+    # Needed only by the heartbeat step at the end.
+    permissions:
+      contents: write
+
+    env:
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      # Neon requires TLS. load.py / scheduler.py call psycopg2.connect() without
+      # an sslmode argument, so libpq picks this up from the environment - which
+      # is why no Python change is needed to point the pipeline at Neon.
+      PGSSLMODE: require
+      PYTHONUTF8: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        # Only what the pipeline needs. The root requirements.txt still carries
+        # streamlit/plotly/fastapi, none of which a scrape run uses.
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright rapidfuzz psycopg2-binary python-dotenv
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Verify database connectivity
+        # Fail in 5 seconds with a clear message rather than 3 hours later at the
+        # load step with a full sweep's work thrown away.
+        run: python scripts/db_check.py
+
+      - name: Run pipeline
+        run: |
+          ARGS="--once"
+          if [ -n "${{ github.event.inputs.categories }}" ]; then
+            ARGS="$ARGS --categories ${{ github.event.inputs.categories }}"
+          fi
+          if [ -n "${{ github.event.inputs.retailers }}" ]; then
+            ARGS="$ARGS --retailers ${{ github.event.inputs.retailers }}"
+          fi
+          echo "scheduler.py $ARGS"
+          python scheduler.py $ARGS
+
+      - name: Freshness report
+        # Runs even if the pipeline failed part-way, so a partial sweep still
+        # tells us which retailers landed and which went silent.
+        if: always()
+        run: python scripts/freshness_report.py
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-log
+          path: logs/scheduler.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Heartbeat
+        # GitHub disables scheduled workflows on public repos after 60 days with
+        # no repository activity. Without this, the nightly job would quietly
+        # stop after two quiet months - the exact "manual work" this is meant to
+        # remove.
+        #
+        # The commit goes to a dedicated ci-heartbeat branch, never to main,
+        # because Vercel and Render auto-deploy on every push to main and a daily
+        # redeploy would burn free-tier build minutes for no reason.
+        #
+        # Runs even when the sweep fails - a broken scraper must not also switch
+        # off the scheduler.
+        if: always() && github.event_name == 'schedule'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "last scheduled run: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" > heartbeat.txt
+          git add -f heartbeat.txt
+          git commit -m "chore: scheduled-run heartbeat"
+          git push --force origin HEAD:refs/heads/ci-heartbeat

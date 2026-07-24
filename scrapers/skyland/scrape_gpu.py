@@ -51,7 +51,7 @@ async def scrape_page(page, url: str) -> list[dict]:
     scraped_at = datetime.now(timezone.utc).isoformat()
 
     for card in cards:
-        name_el = await card.query_selector(".caption .name a")
+        name_el = await card.query_selector(".caption .name a, .caption h4 a")
         if not name_el:
             continue
         name = (await name_el.inner_text()).strip()
