@@ -1,7 +1,8 @@
-import { useMemo, useRef, type MouseEvent } from "react";
-import { ArrowRight, Plus, Store, TrendingDown } from "lucide-react";
+import { useMemo, useRef, useState, type MouseEvent } from "react";
+import { ArrowRight, ImageOff, Plus, Store, TrendingDown } from "lucide-react";
 import type { ProductSummary } from "../types";
 import { retailerColor } from "../config";
+import { assetUrl } from "../api";
 import { formatBDT, humanizeKey } from "../lib/format";
 import { useCountUp } from "../lib/useCountUp";
 import { PriceSpread } from "./PriceSpread";
@@ -57,6 +58,24 @@ export function ProductCard({ product, index, onOpen, onAddToBuild, showAddToBui
   const chips = useMemo(() => pickSpecs(product.specs), [product.specs]);
   const animatedPrice = useCountUp(product.cheapest_price);
 
+  // Image is per-listing (each retailer hosts its own). Two forms exist:
+  //   • image_cutout — self-hosted transparent PNG (background removed) → floats
+  //     on the dark card, the premium look.
+  //   • image_url    — raw hotlinked photo with a baked-in white background →
+  //     shown on a light tile with mix-blend-multiply as a fallback.
+  // Prefer a listing that has a cutout; else the cheapest photo; else any photo.
+  const imageListing =
+    product.listings.find((l) => l.image_cutout) ??
+    (cheapestListing?.image_url ? cheapestListing : null) ??
+    product.listings.find((l) => l.image_url) ??
+    null;
+  const cutoutUrl = imageListing?.image_cutout ? assetUrl(imageListing.image_cutout) : null;
+  const photoUrl = imageListing?.image_url ?? null;
+  const [cutoutFailed, setCutoutFailed] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const showCutout = !!cutoutUrl && !cutoutFailed;
+  const showPhoto = !showCutout && !!photoUrl && !photoFailed;
+
   const canAddToBuild = showAddToBuild && !!slotForCategory(product.category) && !!onAddToBuild;
 
   // 3D tilt — pointer-driven CSS perspective transform + subtle glare overlay.
@@ -99,6 +118,41 @@ export function ProductCard({ product, index, onOpen, onAddToBuild, showAddToBui
     >
       {/* Glare overlay for the tilt effect */}
       <span className="card-glare pointer-events-none absolute inset-0 rounded-[--radius-card]" />
+
+      {/* Image slot — ALWAYS a fixed aspect ratio so the grid stays even, with
+          three tiers of fidelity:
+          1. Cutout (bg removed): a transparent PNG that floats directly on the
+             dark card with a soft radial glow + drop shadow — the premium look.
+          2. Raw photo: hotlinked JPEG with a baked-in white background, shown on
+             a light tile with mix-blend-multiply so the white blends away.
+          3. Placeholder: a muted theme-matching slot when there's no image. */}
+      {showCutout ? (
+        <div className="relative mb-4 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,0.06),transparent_70%)]">
+          <img
+            src={cutoutUrl!}
+            alt={product.name}
+            loading="lazy"
+            decoding="async"
+            onError={() => setCutoutFailed(true)}
+            className="h-full w-full object-contain p-3 drop-shadow-[0_10px_20px_rgba(0,0,0,0.55)] transition-transform duration-300 group-hover:scale-[1.06]"
+          />
+        </div>
+      ) : showPhoto ? (
+        <div className="relative mb-4 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-white to-slate-100 shadow-sm ring-1 ring-inset ring-black/[0.05]">
+          <img
+            src={photoUrl!}
+            alt={product.name}
+            loading="lazy"
+            decoding="async"
+            onError={() => setPhotoFailed(true)}
+            className="h-full w-full object-contain p-4 mix-blend-multiply transition-transform duration-300 group-hover:scale-[1.04]"
+          />
+        </div>
+      ) : (
+        <div className="relative mb-4 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl bg-white/[0.02] ring-1 ring-inset ring-white/[0.06]">
+          <ImageOff className="h-8 w-8 text-white/10" strokeWidth={1.5} />
+        </div>
+      )}
 
       {/* Header: brand + store count + Add-to-Build */}
       <div className="relative flex items-start justify-between gap-3">

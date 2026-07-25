@@ -63,6 +63,21 @@ async def scrape_page(page, url: str) -> list[dict]:
         href = await name_el.get_attribute("href") if name_el else None
         product_url = href if href and href.startswith("http") else (BASE_URL + href if href else None)
 
+        # --- Product image ---
+        # OpenCart cards lazy-load the thumbnail, so the real URL is often in
+        # data-src (with src holding a placeholder). Prefer data-src, fall back to src.
+        img_el = await card.query_selector(".p-item-img img, .image img, img")
+        image_url = None
+        if img_el:
+            image_url = (
+                await img_el.get_attribute("data-src")
+                or await img_el.get_attribute("src")
+            )
+            if image_url and image_url.startswith("//"):
+                image_url = "https:" + image_url
+            elif image_url and image_url.startswith("/"):
+                image_url = BASE_URL + image_url
+
         # --- Price ---
         # StarTech shows a "new" (current) price and sometimes a strikethrough old price.
         price_el = await card.query_selector(".p-item-price span")
@@ -106,6 +121,7 @@ async def scrape_page(page, url: str) -> list[dict]:
                 "in_stock": in_stock if price is not None else False,
                 "stock_status": stock_status if price is not None else "out_of_stock",
                 "product_url": product_url,
+                "image_url": image_url,
                 "inline_specs": inline_specs,
                 "source": "StarTech",
                 "pc_bundle_only": pc_bundle_only,

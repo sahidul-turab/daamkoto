@@ -40,6 +40,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend import agent as agent_mod, database, queries
@@ -306,6 +307,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve background-removed product cutouts as static files. rembg runs offline
+# (scripts/remove_backgrounds.py) and writes transparent PNGs here; the web
+# process only serves them, so the heavy ML deps never load in the API runtime.
+_MEDIA_DIR = Path(__file__).resolve().parent / "media"
+(_MEDIA_DIR / "cutouts").mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(_MEDIA_DIR)), name="media")
+
 
 # ---------------------------------------------------------------------------
 # Pydantic response models
@@ -318,6 +326,8 @@ class Listing(BaseModel):
     stock_status: str = "in_stock"  # in_stock | out_of_stock | upcoming | bundle_only
     pc_bundle_only: bool = False
     product_url: str | None
+    image_url: str | None = None  # retailer's hotlinked thumbnail; null until re-scraped
+    image_cutout: str | None = None  # self-hosted transparent PNG (bg removed); null until processed
     scraped_at: Any  # datetime — keep as Any to avoid timezone parsing edge cases
 
 

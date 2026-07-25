@@ -210,6 +210,7 @@ def _make_canonical(group: list[dict], key: str) -> CanonicalProduct:
                 "stock_status": r.get("stock_status") or ("in_stock" if r["in_stock"] else "out_of_stock"),
                 "pc_bundle_only": bool(r.get("pc_bundle_only", False)),
                 "product_url": r["product_url"],
+                "image_url": r.get("image_url"),
                 "scraped_at": r.get("scraped_at"),
                 "seller_raw_specs": r.get("seller_raw_specs") or {},
             }

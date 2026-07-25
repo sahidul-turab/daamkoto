@@ -43,6 +43,24 @@ def clean_price(raw: str) -> float | None:
         return None
 
 
+async def extract_image(card, base_url):
+    """First product image URL on a listing card, or None.
+
+    Prefers lazy-load attributes (data-src etc.) over src, skips inline-data and
+    SVG icons, and resolves protocol- or root-relative URLs against base_url.
+    """
+    for img in await card.query_selector_all("img"):
+        for attr in ("data-src", "data-original", "data-lazy", "src"):
+            v = await img.get_attribute(attr)
+            if v and not v.startswith("data:") and not v.lower().endswith(".svg"):
+                if v.startswith("//"):
+                    return "https:" + v
+                if v.startswith("/"):
+                    return base_url + v
+                return v
+    return None
+
+
 async def extract_products_from_page(page) -> list[dict]:
     """Extract all product cards visible on the current page state."""
     cards = await page.query_selector_all("article.products-list__item")
@@ -90,6 +108,7 @@ async def extract_products_from_page(page) -> list[dict]:
             "in_stock": in_stock if price is not None else False,
             "stock_status": stock_status if price is not None else "out_of_stock",
             "product_url": product_url,
+            "image_url": await extract_image(card, BASE_URL),
             "inline_specs": {},  # specs extracted from title during normalize
             "source": "Techland",
             "pc_bundle_only": pc_bundle_only,

@@ -56,8 +56,11 @@ _ALLOWED_SPEC_KEYS = {
 
 _CURRENT_PRICES_CTE = """
 WITH current_prices AS (
-    SELECT product_id, retailer, price_bdt, in_stock, stock_status, pc_bundle_only, product_url, scraped_at
-    FROM mv_current_prices
+    SELECT m.product_id, m.retailer, m.price_bdt, m.in_stock, m.stock_status,
+           m.pc_bundle_only, m.product_url, m.image_url,
+           ic.cutout_path AS image_cutout, m.scraped_at
+    FROM mv_current_prices m
+    LEFT JOIN image_cutouts ic ON ic.source_url = m.image_url
 )
 """
 
@@ -209,6 +212,8 @@ def search_products(
                     'stock_status',   cp.stock_status,
                     'pc_bundle_only', cp.pc_bundle_only,
                     'product_url',    cp.product_url,
+                    'image_url',      cp.image_url,
+                    'image_cutout',   cp.image_cutout,
                     'scraped_at',     cp.scraped_at
                 ) ORDER BY cp.price_bdt ASC NULLS LAST
             ) AS listings
@@ -288,6 +293,8 @@ def get_product(conn, product_id: int) -> dict | None:
                     'stock_status',   cp.stock_status,
                     'pc_bundle_only', cp.pc_bundle_only,
                     'product_url',    cp.product_url,
+                    'image_url',      cp.image_url,
+                    'image_cutout',   cp.image_cutout,
                     'scraped_at',     cp.scraped_at
                 ) ORDER BY cp.price_bdt ASC NULLS LAST
             ) AS listings

@@ -7,6 +7,8 @@ export interface Listing {
   stock_status: "in_stock" | "out_of_stock" | "upcoming" | "bundle_only" | string;
   pc_bundle_only: boolean;
   product_url: string | null;
+  image_url?: string | null;
+  image_cutout?: string | null;
   scraped_at: string;
 }
 

@@ -2280,6 +2280,9 @@ def main():
             "in_stock" if raw.get("in_stock") else "out_of_stock"
         )
         cleaned["pc_bundle_only"] = bool(raw.get("pc_bundle_only", False))
+        # Retailer's product thumbnail URL (hotlinked, not downloaded). Passed
+        # through here for every category so no per-cleaner edits are needed.
+        cleaned["image_url"] = raw.get("image_url")
         clean_records.append(cleaned)
 
     out_dir = Path("data/processed")

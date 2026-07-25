@@ -34,6 +34,27 @@ window.chrome = {runtime: {}};
 """
 
 
+async def extract_image(card):
+    """First real product-image URL on a listing card (absolute), or None.
+
+    Reads common lazy-load attributes, skips inline-data / SVG icons, and
+    resolves relative URLs against the page base URI in-browser, so it needs no
+    per-site base URL and works across every retailer's markup.
+    """
+    for img in await card.query_selector_all("img"):
+        url = await img.evaluate(
+            """el => {
+                const v = el.getAttribute('data-src') || el.getAttribute('data-original')
+                       || el.getAttribute('data-lazy') || el.getAttribute('src') || '';
+                if (!v || v.startsWith('data:') || v.toLowerCase().endsWith('.svg')) return '';
+                try { return new URL(v, document.baseURI).href; } catch (e) { return ''; }
+            }"""
+        )
+        if url:
+            return url
+    return None
+
+
 async def scrape_page(page, url: str) -> list[dict]:
     await page.goto(url, wait_until="domcontentloaded")
     try:
@@ -89,6 +110,7 @@ async def scrape_page(page, url: str) -> list[dict]:
                 pass
 
         products.append({
+            "image_url": await extract_image(card),
             "name": name,
             "price_bdt": price,
             "in_stock": in_stock if price is not None else False,

@@ -20,5 +20,12 @@ plotly>=5.0.0
 # AI chatbot (Groq free tier — OpenAI-compatible)
 groq>=1.0.0
 
+# Product image background removal (OFFLINE processor only — scripts/remove_backgrounds.py).
+# Heavy (onnxruntime + a ~170 MB model on first run); NOT imported by the web backend,
+# which only serves the finished transparent PNGs as static files.
+rembg>=2.0.77
+onnxruntime>=1.27.0
+pillow>=10.0.0
+
 # Utilities
 python-dotenv>=1.0.0

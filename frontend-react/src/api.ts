@@ -39,6 +39,16 @@ export function buildUrl(path: string, params?: Record<string, unknown>): string
   return url.toString();
 }
 
+/**
+ * Resolve a backend-relative asset path (e.g. a "/media/..." cutout) against the
+ * same origin the API uses — the "/api" dev proxy or VITE_API_BASE in prod.
+ * Absolute URLs are returned unchanged.
+ */
+export function assetUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return BASE + path;
+}
+
 async function fetchJson<T>(url: string, label: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new ApiError(res.status, `${label} → ${res.status}`);

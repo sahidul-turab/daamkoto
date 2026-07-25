@@ -175,10 +175,11 @@ def insert_price(cur, product_id: int, retailer_id: int, listing: dict) -> bool:
 
     cur.execute(
         """
-        INSERT INTO prices (product_id, retailer_id, price_bdt, in_stock, stock_status, pc_bundle_only, product_url, scraped_at, seller_specs)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO prices (product_id, retailer_id, price_bdt, in_stock, stock_status, pc_bundle_only, product_url, image_url, scraped_at, seller_specs)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (product_id, retailer_id, scraped_at)
-        DO UPDATE SET pc_bundle_only = EXCLUDED.pc_bundle_only
+        DO UPDATE SET pc_bundle_only = EXCLUDED.pc_bundle_only,
+                      image_url = COALESCE(EXCLUDED.image_url, prices.image_url)
         """,
         (
             product_id,
@@ -188,6 +189,7 @@ def insert_price(cur, product_id: int, retailer_id: int, listing: dict) -> bool:
             stock_status,
             pc_bundle_only,
             listing.get("product_url"),
+            listing.get("image_url"),
             listing.get("scraped_at"),
             json.dumps(listing.get("seller_raw_specs") or {}),
         ),

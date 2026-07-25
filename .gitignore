@@ -42,3 +42,6 @@ frontend-react/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated product-image cutouts (regenerate via scripts/remove_backgrounds.py)
+backend/media/cutouts/

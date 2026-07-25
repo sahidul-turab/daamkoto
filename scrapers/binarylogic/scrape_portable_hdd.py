@@ -16,6 +16,27 @@ def clean_price(raw: str) -> float | None:
     try: return float(prices[-1].replace(",", ""))
     except ValueError: return None
 
+async def extract_image(card):
+    """First real product-image URL on a listing card (absolute), or None.
+
+    Reads common lazy-load attributes, skips inline-data / SVG icons, and
+    resolves relative URLs against the page base URI in-browser, so it needs no
+    per-site base URL and works across every retailer's markup.
+    """
+    for img in await card.query_selector_all("img"):
+        url = await img.evaluate(
+            """el => {
+                const v = el.getAttribute('data-src') || el.getAttribute('data-original')
+                       || el.getAttribute('data-lazy') || el.getAttribute('src') || '';
+                if (!v || v.startsWith('data:') || v.toLowerCase().endsWith('.svg')) return '';
+                try { return new URL(v, document.baseURI).href; } catch (e) { return ''; }
+            }"""
+        )
+        if url:
+            return url
+    return None
+
+
 async def scrape_page(page, url: str) -> list[dict]:
     await page.goto(url, wait_until="domcontentloaded")
     try: await page.wait_for_selector(".p-item", timeout=15_000)
@@ -35,7 +56,8 @@ async def scrape_page(page, url: str) -> list[dict]:
         raw_price = (await price_el.inner_text()).strip() if price_el else None
         price = clean_price(raw_price) if raw_price else None
         in_stock = price is not None
-        products.append({"name": name, "price_bdt": price, "in_stock": in_stock,
+        products.append({
+            "image_url": await extract_image(card),"name": name, "price_bdt": price, "in_stock": in_stock,
             "product_url": product_url, "inline_specs": {},
             "source": "BinaryLogic", "scraped_at": scraped_at})
     return products
