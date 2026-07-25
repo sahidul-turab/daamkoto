@@ -45,3 +45,9 @@ Thumbs.db
 
 # Generated product-image cutouts (regenerate via scripts/remove_backgrounds.py)
 backend/media/cutouts/
+
+# R2 credentials (never commit)
+.env.r2
+
+# Neon production DB (never commit)
+.env.neon
