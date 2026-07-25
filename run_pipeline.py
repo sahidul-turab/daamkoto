@@ -156,6 +156,8 @@ def main() -> None:
                         help="Run everything but pass --dry-run to the loader")
     parser.add_argument("--limit", type=int, default=None,
                         help="Limit StarTech enricher to N products (testing only)")
+    parser.add_argument("--no-cutouts", action="store_true",
+                        help="Skip background-removal/cutout generation after load")
     args = parser.parse_args()
 
     cat = args.category
@@ -209,6 +211,17 @@ def main() -> None:
                 ["database/refresh_mv.py"],
                 "Refresh mv_current_prices (pre-computed price lookup)",
             )
+
+            # Generate cutouts for any newly-scraped images and store their URLs
+            # (uploaded to R2 + served via the Worker when .env.r2 is configured;
+            # otherwise a local /media path). fatal=False so a cutout hiccup never
+            # blocks a price update. Skip with --no-cutouts.
+            if not args.no_cutouts:
+                run(
+                    ["scripts/remove_backgrounds.py", "--category", db_category],
+                    f"Remove backgrounds → cutouts for {db_category}",
+                    fatal=False,
+                )
 
     print("\nPipeline complete.")
 
