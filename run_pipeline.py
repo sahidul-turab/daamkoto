@@ -19,9 +19,18 @@ Usage:
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+# Windows consoles default to cp1252, but pipeline labels and child scripts print
+# Unicode (→, ✓, ৳). Force UTF-8 so a stray glyph never aborts a full run.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 # Retailers that have scrapers for each category
 ALL_RETAILERS = [
@@ -53,7 +62,10 @@ def run(cmd: list[str], label: str, fatal: bool = True) -> bool:
     print(f"  STEP: {label}")
     print(f"  CMD : {' '.join(full_cmd)}")
     print(f"{'='*60}")
-    result = subprocess.run(full_cmd)
+    # Child scripts print Unicode too; force UTF-8 in their stdio so they don't
+    # die on cp1252 the way this script would.
+    child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    result = subprocess.run(full_cmd, env=child_env)
     if result.returncode != 0:
         if fatal:
             print(f"\nPipeline aborted: '{label}' exited with code {result.returncode}.")

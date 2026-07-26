@@ -24,13 +24,18 @@ _LOAD_LOCK_KEY = 20260724
 
 
 def main():
-    conn = psycopg2.connect(
-        host=os.environ["DB_HOST"],
-        port=int(os.environ.get("DB_PORT", 5432)),
-        dbname=os.environ["DB_NAME"],
-        user=os.environ["DB_USER"],
-        password=os.environ["DB_PASSWORD"],
-    )
+    # Prefer a cloud connection string (Neon) when present; else discrete DB_*.
+    dsn = os.getenv("DATABASE_URL") or os.getenv("NEON_URL")
+    if dsn:
+        conn = psycopg2.connect(dsn)
+    else:
+        conn = psycopg2.connect(
+            host=os.environ["DB_HOST"],
+            port=int(os.environ.get("DB_PORT", 5432)),
+            dbname=os.environ["DB_NAME"],
+            user=os.environ["DB_USER"],
+            password=os.environ["DB_PASSWORD"],
+        )
     conn.autocommit = True
     with conn.cursor() as cur:
         # Same advisory lock the loader takes. Categories run in parallel now, so

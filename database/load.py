@@ -68,9 +68,15 @@ _LOAD_LOCK_KEY = 20260724
 
 def get_connection():
     """
-    Connect using environment variables from .env.
-    Copy .env.example → .env and fill in your credentials.
+    Connect using environment variables.
+
+    Prefer a single connection string (DATABASE_URL / NEON_URL) when present —
+    that's how cloud Postgres (Neon) is addressed, and it carries sslmode. Fall
+    back to the discrete DB_* vars from .env for local development.
     """
+    dsn = os.getenv("DATABASE_URL") or os.getenv("NEON_URL")
+    if dsn:
+        return psycopg2.connect(dsn)
     return psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
         port=int(os.getenv("DB_PORT", "5432")),
