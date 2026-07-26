@@ -101,8 +101,12 @@ async def scrape_page(page, url: str) -> list[dict]:
         if not name:
             continue
 
-        slug = item.get("product_slug") or ""
-        product_url = f"{BASE_URL}/{slug}" if slug else None
+        # Ryans dropped product_slug from data-item; the real link is the
+        # <a> wrapping the card image (.image-box a).
+        link_el = await card.query_selector(".image-box a")
+        product_url = await link_el.get_attribute("href") if link_el else None
+        if product_url and not product_url.startswith("http"):
+            product_url = f"{BASE_URL}/{product_url.lstrip('/')}"
 
         # Discounted price (price2) wins; fall back to regular price (price1)
         price1 = float(item.get("product_price1") or 0)
