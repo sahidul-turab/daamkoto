@@ -214,8 +214,10 @@ export interface Alert {
 }
 
 // Filter state managed by the UI and serialized into /products query params.
+// A string[] is a multi-select group (several ticked options → OR match);
+// a boolean is a single toggle.
 export interface SpecParams {
-  [key: string]: string | boolean | undefined;
+  [key: string]: string | string[] | boolean | undefined;
 }
 
 // Scraper health dashboard types

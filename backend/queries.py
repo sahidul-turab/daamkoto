@@ -14,6 +14,7 @@ The "current price" concept:
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 import psycopg2.extras
@@ -50,6 +51,57 @@ _ALLOWED_SPEC_KEYS = {
     "pad_size", "stitched_edge", "platform", "vibration",
 }
 
+# Unit multipliers so "1TB" sorts after "512GB" and "6000MHz" after "800MHz",
+# instead of the alphabetical order Postgres gives ("128GB" < "4GB" < "1TB").
+# Each spec key is a single dimension, so one scale table covers all of them.
+_UNIT_SCALE = {
+    "tb": 1024 * 1024, "gb": 1024, "mb": 1, "kb": 1 / 1024,
+    "ghz": 1000, "mhz": 1, "khz": 1 / 1000,
+}
+_NUM_UNIT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*([a-z+]*)", re.IGNORECASE)
+
+
+def _natural_sort_key(value: str) -> tuple:
+    """
+    Sort filter values by magnitude, not lexically.
+
+    Returns a tuple that puts numeric values (scaled by their unit) first, in
+    ascending order, and falls back to case-insensitive alphabetical for values
+    with no leading number (e.g. "IPS", "Fully Modular").
+    """
+    s = str(value).strip().lower()
+    m = _NUM_UNIT_RE.search(s)
+    if not m:
+        return (1, 0.0, s)
+    num = float(m.group(1))
+    scale = _UNIT_SCALE.get(m.group(2), 1.0)
+    return (0, num * scale, s)
+
+
+def _spec_clause(key: str, value) -> tuple[str | None, list]:
+    """
+    Build one WHERE fragment for a JSONB spec filter. Handles three value shapes:
+      - bool         → (p.specs->>'key')::boolean = %s
+      - str          → p.specs->>'key' ILIKE %s          (single-select)
+      - list[str]    → LOWER(p.specs->>'key') IN (...)   (multi-select, OR)
+    The key is assumed already validated against _ALLOWED_SPEC_KEYS by the caller.
+    Returns (sql, params); sql is None when there is nothing to filter on.
+    """
+    if isinstance(value, bool):
+        return f"(p.specs->>'{key}')::boolean = %s", [value]
+    if isinstance(value, (list, tuple, set)):
+        vals = [str(v) for v in value if v not in (None, "")]
+        if not vals:
+            return None, []
+        if len(vals) == 1:
+            return f"p.specs->>'{key}' ILIKE %s", [vals[0]]
+        placeholders = ", ".join(["%s"] * len(vals))
+        return f"LOWER(p.specs->>'{key}') IN ({placeholders})", [v.lower() for v in vals]
+    if value in (None, ""):
+        return None, []
+    return f"p.specs->>'{key}' ILIKE %s", [str(value)]
+
+
 # ---------------------------------------------------------------------------
 # Shared CTE — used by multiple queries
 # ---------------------------------------------------------------------------
@@ -75,9 +127,9 @@ def search_products(
     search: str | None = None,
     category: str | None = None,
     brand: str | None = None,
-    generation: str | None = None,
-    capacity: str | None = None,
-    specs_filter: dict | None = None,
+    generation: list[str] | str | None = None,   # list = multi-select (OR)
+    capacity: list[str] | str | None = None,      # list = multi-select (OR)
+    specs_filter: dict | None = None,             # values may be str, list[str], or bool
     min_price: float | None = None,
     max_price: float | None = None,
     in_stock_only: bool = True,
@@ -120,26 +172,28 @@ def search_products(
     if brand:
         where_parts.append("LOWER(p.brand) = LOWER(%s)")
         params.append(brand)
-    if generation:
-        where_parts.append("p.specs->>'generation' = %s")
-        params.append(generation)
-    if capacity:
-        where_parts.append("p.specs->>'capacity' = %s")
-        params.append(capacity)
 
-    # Generic JSONB spec filters — each key/value pair becomes a WHERE clause.
-    # Keys are validated against _ALLOWED_SPEC_KEYS to prevent injection.
+    # generation / capacity are just two more JSONB spec filters, but kept as
+    # named args for API clarity. Merge them into the generic path so they get
+    # the same multi-select (list) handling as everything else.
+    combined_specs: dict = {}
+    if generation:
+        combined_specs["generation"] = generation
+    if capacity:
+        combined_specs["capacity"] = capacity
     if specs_filter:
-        for key, value in specs_filter.items():
-            if key not in _ALLOWED_SPEC_KEYS:
-                continue
-            if isinstance(value, bool):
-                # Boolean values need cast: specs->>'rgb' = 'true'
-                where_parts.append(f"(p.specs->>'{key}')::boolean = %s")
-                params.append(value)
-            else:
-                where_parts.append(f"p.specs->>'{key}' ILIKE %s")
-                params.append(str(value))
+        combined_specs.update(specs_filter)
+
+    # Generic JSONB spec filters — each key becomes a WHERE clause. A list value
+    # is an OR (multi-select); a string is a single match; a bool is a flag.
+    # Keys are validated against _ALLOWED_SPEC_KEYS to prevent injection.
+    for key, value in combined_specs.items():
+        if key not in _ALLOWED_SPEC_KEYS:
+            continue
+        sql, sql_params = _spec_clause(key, value)
+        if sql:
+            where_parts.append(sql)
+            params.extend(sql_params)
 
     where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
@@ -589,11 +643,13 @@ def get_spec_values(conn, category: str, key: str) -> list[str]:
               AND p.specs->>%s IS NOT NULL
               AND p.specs->>%s != 'null'
               AND p.specs->>%s != 'false'
-            ORDER BY val
             """,
             (key, category, key, key, key),
         )
-        return [r[0] for r in cur.fetchall() if r[0]]
+        vals = [r[0] for r in cur.fetchall() if r[0]]
+    # Sort by magnitude, not lexically, so dropdowns read 4GB, 16GB, 128GB, 1TB
+    # rather than 128GB, 16GB, 1TB, 4GB. See _natural_sort_key.
+    return sorted(vals, key=_natural_sort_key)
 
 
 # ---------------------------------------------------------------------------

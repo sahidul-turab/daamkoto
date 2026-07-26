@@ -12,8 +12,10 @@ interface Props {
   resultCount: number;
 }
 
-// A single spec <select> that lazily loads its real options from the API.
-function SpecSelect({
+// A multi-select spec filter: a scrollable group of checkboxes whose options are
+// lazily loaded from the API (with a static fallback). Ticking several boxes ORs
+// them, matching how StarTech's filter sidebar behaves.
+function SpecMultiSelect({
   category,
   filter,
   value,
@@ -21,10 +23,11 @@ function SpecSelect({
 }: {
   category: string;
   filter: SelectFilter;
-  value: string | undefined;
-  onChange: (v: string | undefined) => void;
+  value: string | string[] | undefined;
+  onChange: (v: string[] | undefined) => void;
 }) {
   const [options, setOptions] = useState<string[]>(filter.fallback);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -39,21 +42,64 @@ function SpecSelect({
     };
   }, [category, filter.specKey]);
 
+  // Tolerate a stray string (e.g. set by the chatbot) by coercing to an array.
+  const selected = Array.isArray(value) ? value : value ? [String(value)] : [];
+
+  const toggle = (opt: string) => {
+    const next = selected.includes(opt)
+      ? selected.filter((v) => v !== opt)
+      : [...selected, opt];
+    onChange(next.length ? next : undefined);
+  };
+
+  const q = query.trim().toLowerCase();
+  const shown = q ? options.filter((o) => o.toLowerCase().includes(q)) : options;
+  const showSearch = options.length > 10;
+
   return (
     <div>
-      <label className="label">{filter.label}</label>
-      <select
-        className="field"
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value || undefined)}
-      >
-        <option value="">All {filter.label}</option>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
+      <div className="mb-1.5 flex items-center justify-between">
+        <label className="label !mb-0">{filter.label}</label>
+        {selected.length > 0 && (
+          <button
+            onClick={() => onChange(undefined)}
+            className="text-[10px] font-medium text-ink-3 hover:text-brand"
+          >
+            Clear ({selected.length})
+          </button>
+        )}
+      </div>
+      {showSearch && (
+        <input
+          className="field !mb-1.5 !py-1 text-xs"
+          placeholder={`Search ${filter.label.toLowerCase()}…`}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      )}
+      <div className="no-scrollbar max-h-44 overflow-y-auto rounded-xl border border-line bg-surface-2 p-1">
+        {shown.length === 0 ? (
+          <div className="px-2 py-1.5 text-xs text-ink-4">No matches</div>
+        ) : (
+          shown.map((o) => {
+            const on = selected.includes(o);
+            return (
+              <label
+                key={o}
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-line/40"
+              >
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() => toggle(o)}
+                  className="h-3.5 w-3.5 shrink-0 accent-brand-strong"
+                />
+                <span className={on ? "font-medium text-ink" : "text-ink-2"}>{o}</span>
+              </label>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -78,8 +124,10 @@ export function FilterSidebar({
     };
   }, [category.db]);
 
-  const setSpec = (param: string, v: string | boolean | undefined) =>
-    onChange({ specs: { ...filters.specs, [param]: v || undefined } });
+  const setSpec = (param: string, v: string | string[] | boolean | undefined) => {
+    const val = Array.isArray(v) ? (v.length ? v : undefined) : v || undefined;
+    onChange({ specs: { ...filters.specs, [param]: val } });
+  };
 
   return (
     <aside className="glass flex flex-col gap-5 p-5">
@@ -204,11 +252,11 @@ export function FilterSidebar({
         <div className="flex flex-col gap-4">
           {category.filters.map((f) =>
             f.kind === "select" ? (
-              <SpecSelect
+              <SpecMultiSelect
                 key={f.param}
                 category={category.db}
                 filter={f}
-                value={filters.specs[f.param] as string | undefined}
+                value={filters.specs[f.param] as string | string[] | undefined}
                 onChange={(v) => setSpec(f.param, v)}
               />
             ) : (

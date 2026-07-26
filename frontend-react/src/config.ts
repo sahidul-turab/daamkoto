@@ -42,10 +42,11 @@ const bool = (param: string, label: string): BoolFilter => ({
 
 const RAM_FILTERS: SpecFilter[] = [
   sel("generation", "DDR Generation", "generation", ["DDR3", "DDR4", "DDR5"]),
-  sel("capacity", "Capacity", "capacity", ["4GB", "8GB", "16GB", "32GB", "64GB", "96GB", "128GB"]),
+  sel("capacity", "Capacity", "capacity", ["4GB", "8GB", "16GB", "24GB", "32GB", "48GB", "64GB", "96GB", "128GB"]),
   sel("speed", "Bus Speed", "speed", [
-    "1333MHz", "1600MHz", "2400MHz", "2666MHz", "3200MHz",
-    "3600MHz", "4800MHz", "5200MHz", "5600MHz", "6000MHz",
+    "1333MHz", "1600MHz", "2400MHz", "2666MHz", "3000MHz", "3200MHz", "3400MHz",
+    "3600MHz", "4266MHz", "4800MHz", "5200MHz", "5600MHz", "6000MHz", "6200MHz",
+    "6400MHz", "6600MHz", "6800MHz", "7000MHz", "7200MHz", "7600MHz", "8000MHz",
   ]),
   sel("latency", "CAS Latency", "latency", ["CL9", "CL11", "CL14", "CL16", "CL18", "CL32", "CL36", "CL38", "CL40"]),
   bool("heatsink", "Heatsink"),
@@ -59,13 +60,13 @@ export const CATEGORIES: CategoryDef[] = [
   {
     label: "GPU", db: "GPU", icon: "Cpu", filters: [
       sel("chipset_brand", "GPU Maker", "chipset_brand", ["NVIDIA", "AMD", "Intel Arc"]),
-      sel("vram", "VRAM", "vram", ["2GB", "4GB", "6GB", "8GB", "10GB", "12GB", "16GB", "20GB", "24GB"]),
+      sel("vram", "VRAM", "vram", ["1GB", "2GB", "4GB", "6GB", "8GB", "10GB", "12GB", "16GB", "20GB", "24GB", "32GB"]),
       sel("chipset", "Chipset", "chipset", [
         "RTX 4090", "RTX 4080 SUPER", "RTX 4080", "RTX 4070 TI SUPER", "RTX 4070 TI",
         "RTX 4070 SUPER", "RTX 4070", "RTX 4060 TI", "RTX 4060", "RTX 3060", "RTX 3050",
         "RX 7900 XTX", "RX 7800 XT", "RX 7600", "GTX 1660 SUPER", "GTX 1650",
       ]),
-      sel("memory_type", "Memory Type", "memory_type", ["GDDR5", "GDDR6", "GDDR6X", "GDDR7"]),
+      sel("memory_type", "Memory Type", "memory_type", ["GDDR3", "GDDR5", "GDDR6", "GDDR6X", "GDDR7"]),
     ],
   },
   {
@@ -80,6 +81,7 @@ export const CATEGORIES: CategoryDef[] = [
         "Arrow Lake", "Raptor Lake", "Alder Lake", "Zen 5", "Zen 4", "Zen 3", "Zen 2",
       ]),
       sel("cache", "L3 Cache", "cache", ["6MB", "8MB", "12MB", "16MB", "24MB", "32MB", "36MB", "64MB"]),
+      sel("boost_clock", "Boost Clock", "boost_clock", ["3.5GHz", "4.0GHz", "4.4GHz", "4.8GHz", "5.0GHz", "5.4GHz", "5.7GHz"]),
     ],
   },
   {
@@ -91,6 +93,7 @@ export const CATEGORIES: CategoryDef[] = [
       ]),
       sel("form_factor", "Form Factor", "form_factor", ["ATX", "Micro-ATX", "Mini-ITX", "E-ATX"]),
       sel("ram_type", "RAM Type", "ram_type", ["DDR3", "DDR4", "DDR5"]),
+      sel("m2_slots", "M.2 Slots", "m2_slots", ["1", "2", "3", "4", "5"]),
       bool("wifi", "Wi-Fi Built-in"),
     ],
   },
@@ -157,7 +160,8 @@ export const CATEGORIES: CategoryDef[] = [
       sel("refresh_rate", "Refresh Rate", "refresh_rate", [
         "60Hz", "75Hz", "100Hz", "120Hz", "144Hz", "165Hz", "180Hz", "240Hz",
       ]),
-      sel("panel_type", "Panel Type", "panel_type", ["IPS", "VA", "TN", "OLED"]),
+      sel("panel_type", "Panel Type", "panel_type", ["IPS", "VA", "TN", "OLED", "Mini LED"]),
+      sel("response_time", "Response Time", "response_time", ["0.5ms", "1ms", "2ms", "4ms", "5ms"]),
       bool("curved", "Curved"),
       bool("hdr", "HDR"),
     ],

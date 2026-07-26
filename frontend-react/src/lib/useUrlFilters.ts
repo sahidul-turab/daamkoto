@@ -32,7 +32,11 @@ function encode(cat: CategoryDef, filters: Filters, page: number): string {
   if (filters.sort !== DEFAULTS.sort) p.set("sort", filters.sort);
   if (page > 1) p.set("page", String(page));
   for (const [k, v] of Object.entries(filters.specs)) {
-    if (v !== undefined && v !== null && v !== "") {
+    if (v === undefined || v === null || v === "") continue;
+    if (Array.isArray(v)) {
+      // Multi-select → one spec_ param per ticked value, so the URL round-trips.
+      for (const item of v) if (item !== "" && item != null) p.append(`spec_${k}`, String(item));
+    } else {
       p.set(`spec_${k}`, String(v));
     }
   }
@@ -43,11 +47,17 @@ function encode(cat: CategoryDef, filters: Filters, page: number): string {
 function decode(raw: string): { cat: CategoryDef; filters: Filters; page: number } {
   const p = new URLSearchParams(raw);
   const cat = categoryFromDb(p.get("cat") ?? CATEGORIES[0].db);
-  const specs: Record<string, string | boolean> = {};
-  for (const [k, v] of p.entries()) {
-    if (k.startsWith("spec_")) {
-      const key = k.slice(5);
-      specs[key] = v === "true" ? true : v === "false" ? false : v;
+  const specs: Record<string, string | string[] | boolean> = {};
+  // A spec_ key may appear multiple times (multi-select). A lone "true"/"false"
+  // is a boolean toggle; anything else is collected into a string[] group.
+  const specKeys = new Set<string>();
+  for (const k of p.keys()) if (k.startsWith("spec_")) specKeys.add(k.slice(5));
+  for (const key of specKeys) {
+    const vals = p.getAll(`spec_${key}`);
+    if (vals.length === 1 && (vals[0] === "true" || vals[0] === "false")) {
+      specs[key] = vals[0] === "true";
+    } else {
+      specs[key] = vals;
     }
   }
   const filters: Filters = {

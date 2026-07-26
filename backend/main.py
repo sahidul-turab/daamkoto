@@ -529,75 +529,89 @@ def list_products(
     ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    # Category-specific spec filters. String specs accept MULTIPLE values
+    # (repeated query params, e.g. ?generation=DDR4&generation=DDR5) so a user
+    # can tick several options in one group; FastAPI parses them into a list.
+    # Boolean specs stay single toggles.
     # ── RAM filters ─────────────────────────────────────────────────────────
-    capacity: str | None = Query(None, description="[RAM/SSD/HDD] Storage/memory size, e.g. 8GB, 16GB, 1TB"),
-    generation: str | None = Query(None, description="[RAM] DDR generation: DDR4, DDR5"),
-    speed: str | None = Query(None, description="[RAM] Clock speed, e.g. 3200MHz, 4800MHz"),
-    latency: str | None = Query(None, description="[RAM] CAS latency, e.g. CL16, CL36"),
-    form_factor: str | None = Query(None, description="[RAM/Mobo/Case/PSU] e.g. Desktop, Laptop, ATX, Mid Tower"),
+    capacity: list[str] | None = Query(None, description="[RAM/SSD/HDD] Storage/memory size, e.g. 8GB, 16GB, 1TB"),
+    generation: list[str] | None = Query(None, description="[RAM] DDR generation: DDR4, DDR5"),
+    speed: list[str] | None = Query(None, description="[RAM] Clock speed, e.g. 3200MHz, 4800MHz"),
+    latency: list[str] | None = Query(None, description="[RAM] CAS latency, e.g. CL16, CL36"),
+    form_factor: list[str] | None = Query(None, description="[RAM/Mobo/Case/PSU] e.g. Desktop, Laptop, ATX, Mid Tower"),
     heatsink: bool | None = Query(None, description="[RAM] Has heatsink/heat spreader"),
     ecc: bool | None = Query(None, description="[RAM] ECC error-correcting memory"),
+    rgb: bool | None = Query(None, description="[RAM/Peripherals/Case] RGB / ARGB lighting"),
     # ── GPU filters ─────────────────────────────────────────────────────────
-    vram: str | None = Query(None, description="[GPU] Video memory size, e.g. 8GB, 12GB, 16GB"),
-    chipset: str | None = Query(None, description="[GPU/Mobo] GPU chipset (RTX 4070) or mobo chipset (Z790, B760)"),
-    chipset_brand: str | None = Query(None, description="[GPU] GPU manufacturer: NVIDIA, AMD, Intel"),
-    memory_type: str | None = Query(None, description="[GPU] VRAM type: GDDR6, GDDR6X, GDDR7"),
-    interface: str | None = Query(None, description="[GPU/SSD] PCIe interface or NVMe Gen: NVMe Gen4, PCIe 4.0 x16"),
+    vram: list[str] | None = Query(None, description="[GPU] Video memory size, e.g. 8GB, 12GB, 16GB"),
+    chipset: list[str] | None = Query(None, description="[GPU/Mobo] GPU chipset (RTX 4070) or mobo chipset (Z790, B760)"),
+    chipset_brand: list[str] | None = Query(None, description="[GPU] GPU manufacturer: NVIDIA, AMD, Intel"),
+    memory_type: list[str] | None = Query(None, description="[GPU] VRAM type: GDDR6, GDDR6X, GDDR7"),
+    interface: list[str] | None = Query(None, description="[GPU/SSD] PCIe interface or NVMe Gen: NVMe Gen4, PCIe 4.0 x16"),
     # ── CPU filters ─────────────────────────────────────────────────────────
-    socket: str | None = Query(None, description="[CPU/Mobo] CPU socket: LGA1700, LGA1851, AM4, AM5"),
-    series: str | None = Query(None, description="[CPU] CPU series: Core i5, Core i7, Ryzen 5, Ryzen 7"),
-    architecture: str | None = Query(None, description="[CPU] Microarchitecture: Raptor Lake, Zen 4, Arrow Lake"),
-    cores: str | None = Query(None, description="[CPU] Core count, e.g. 6, 8, 12, 16"),
-    boost_clock: str | None = Query(None, description="[CPU] Boost/turbo clock, e.g. 5.4GHz"),
-    cache: str | None = Query(None, description="[CPU/HDD] L3 cache or HDD buffer, e.g. 36MB, 256MB"),
+    socket: list[str] | None = Query(None, description="[CPU/Mobo] CPU socket: LGA1700, LGA1851, AM4, AM5"),
+    series: list[str] | None = Query(None, description="[CPU] CPU series: Core i5, Core i7, Ryzen 5, Ryzen 7"),
+    architecture: list[str] | None = Query(None, description="[CPU] Microarchitecture: Raptor Lake, Zen 4, Arrow Lake"),
+    cores: list[str] | None = Query(None, description="[CPU] Core count, e.g. 6, 8, 12, 16"),
+    boost_clock: list[str] | None = Query(None, description="[CPU] Boost/turbo clock, e.g. 5.4GHz"),
+    cache: list[str] | None = Query(None, description="[CPU/HDD] L3 cache or HDD buffer, e.g. 36MB, 256MB"),
     # ── Motherboard filters ──────────────────────────────────────────────────
-    ram_type: str | None = Query(None, description="[Mobo] Supported RAM type: DDR4, DDR5"),
+    ram_type: list[str] | None = Query(None, description="[Mobo] Supported RAM type: DDR4, DDR5"),
     wifi: bool | None = Query(None, description="[Mobo] Has built-in WiFi"),
-    m2_slots: str | None = Query(None, description="[Mobo] Number of M.2 slots, e.g. 2, 3, 4"),
-    # ── SSD filters ─────────────────────────────────────────────────────────
-    nand_type: str | None = Query(None, description="[SSD] NAND flash type: TLC, QLC, MLC"),
+    m2_slots: list[str] | None = Query(None, description="[Mobo] Number of M.2 slots, e.g. 2, 3, 4"),
+    # ── SSD / HDD filters ─────────────────────────────────────────────────────
+    nand_type: list[str] | None = Query(None, description="[SSD] NAND flash type: TLC, QLC, MLC"),
+    rpm: list[str] | None = Query(None, description="[HDD] Spindle speed, e.g. 5400RPM, 7200RPM"),
     # ── PSU filters ─────────────────────────────────────────────────────────
-    wattage: str | None = Query(None, description="[PSU] Power output, e.g. 650W, 750W, 850W"),
-    efficiency: str | None = Query(None, description="[PSU] 80+ rating: 80+ Bronze, 80+ Gold, 80+ Platinum"),
-    modularity: str | None = Query(None, description="[PSU] Fully Modular, Semi-Modular, Non-Modular"),
+    wattage: list[str] | None = Query(None, description="[PSU] Power output, e.g. 650W, 750W, 850W"),
+    efficiency: list[str] | None = Query(None, description="[PSU] 80+ rating: 80+ Bronze, 80+ Gold, 80+ Platinum"),
+    modularity: list[str] | None = Query(None, description="[PSU] Fully Modular, Semi-Modular, Non-Modular"),
     atx30: bool | None = Query(None, description="[PSU] ATX 3.0 / PCIe 5.0 ready (12VHPWR connector)"),
     # ── Cooler filters ───────────────────────────────────────────────────────
-    cooler_type: str | None = Query(None, alias="type", description="[Cooler] Air or AIO 240mm / AIO 360mm"),
-    radiator_size: str | None = Query(None, description="[Cooler] AIO radiator size: 120mm, 240mm, 360mm"),
+    cooler_type: list[str] | None = Query(None, alias="type", description="[Cooler] Air or AIO 240mm / AIO 360mm"),
+    radiator_size: list[str] | None = Query(None, description="[Cooler] AIO radiator size: 120mm, 240mm, 360mm"),
+    fan_size: list[str] | None = Query(None, description="[Casing Cooler] Fan size, e.g. 120mm, 140mm"),
     # ── Case filters ─────────────────────────────────────────────────────────
-    side_panel: str | None = Query(None, description="[Case] Side panel: Tempered Glass, Mesh, Solid"),
-    color: str | None = Query(None, description="[Case] Chassis color: Black, White, Silver"),
+    side_panel: list[str] | None = Query(None, description="[Case] Side panel: Tempered Glass, Mesh, Solid"),
+    color: list[str] | None = Query(None, description="[Case/Chair/Headset] Colour: Black, White, Silver"),
     front_usb_c: bool | None = Query(None, description="[Case] Has front panel USB Type-C"),
     # ── Monitor filters ──────────────────────────────────────────────────────
-    resolution: str | None = Query(None, description="[Monitor] e.g. 1920x1080, 2560x1440, 3840x2160"),
-    refresh_rate: str | None = Query(None, description="[Monitor] e.g. 60Hz, 144Hz, 240Hz"),
-    panel_type: str | None = Query(None, description="[Monitor] IPS, VA, TN, OLED"),
+    screen_size: list[str] | None = Query(None, description="[Monitor] e.g. 24\", 27\", 32\""),
+    resolution: list[str] | None = Query(None, description="[Monitor] e.g. 1920x1080, 2560x1440, 3840x2160"),
+    refresh_rate: list[str] | None = Query(None, description="[Monitor] e.g. 60Hz, 144Hz, 240Hz"),
+    panel_type: list[str] | None = Query(None, description="[Monitor] IPS, VA, TN, OLED"),
+    response_time: list[str] | None = Query(None, description="[Monitor] Response time, e.g. 1ms, 4ms"),
+    curved: bool | None = Query(None, description="[Monitor] Curved panel"),
+    hdr: bool | None = Query(None, description="[Monitor] HDR support"),
     # ── Peripheral filters ───────────────────────────────────────────────────
-    connectivity: str | None = Query(None, description="[Keyboard/Mouse/Headset] Wired, Wireless, Bluetooth, Tri-Mode"),
-    switch_type: str | None = Query(None, description="[Keyboard] Blue, Red, Brown, Optical, Magnetic, Membrane"),
-    layout: str | None = Query(None, description="[Keyboard] 60%, 65%, 75%, TKL, Full-size"),
+    connectivity: list[str] | None = Query(None, description="[Keyboard/Mouse/Headset] Wired, Wireless, Bluetooth, Tri-Mode"),
+    switch_type: list[str] | None = Query(None, description="[Keyboard] Blue, Red, Brown, Optical, Magnetic, Membrane"),
+    layout: list[str] | None = Query(None, description="[Keyboard] 60%, 65%, 75%, TKL, Full-size"),
     mechanical: bool | None = Query(None, description="[Keyboard] Mechanical switches"),
-    dpi: str | None = Query(None, description="[Mouse] e.g. 16000 DPI, 26000 DPI"),
-    headset_form: str | None = Query(None, description="[Headset] Over-Ear, On-Ear, In-Ear, Earbuds"),
-    microphone: bool | None = Query(None, description="[Headset] Has a microphone"),
+    dpi: list[str] | None = Query(None, description="[Mouse] e.g. 16000 DPI, 26000 DPI"),
+    headset_form: list[str] | None = Query(None, description="[Headset] Over-Ear, On-Ear, In-Ear, Earbuds"),
+    microphone: bool | None = Query(None, description="[Headset/Webcam] Has a microphone"),
     noise_cancelling: bool | None = Query(None, description="[Headset] Active noise cancelling"),
     # ── UPS filters ──────────────────────────────────────────────────────────
-    va_rating: str | None = Query(None, description="[UPS] e.g. 650VA, 1200VA, 2000VA"),
-    ups_type: str | None = Query(None, description="[UPS] Offline, Line Interactive, Online, Mini UPS"),
-    backup_time: str | None = Query(None, description="[UPS] e.g. 20 min, 1 hr"),
+    va_rating: list[str] | None = Query(None, description="[UPS] e.g. 650VA, 1200VA, 2000VA"),
+    ups_type: list[str] | None = Query(None, description="[UPS] Offline, Line Interactive, Online, Mini UPS"),
+    backup_time: list[str] | None = Query(None, description="[UPS] e.g. 20 min, 1 hr"),
     # ── Speaker / webcam / chair / printer / mousepad / gamepad ──────────────
-    channels: str | None = Query(None, description="[Speaker] 2.0, 2.1, 5.1, 7.1, Soundbar"),
-    power_output: str | None = Query(None, description="[Speaker] e.g. 30W, 120W"),
-    webcam_resolution: str | None = Query(None, description="[Webcam] 720p, 1080p, 2K, 4K"),
-    fps: str | None = Query(None, description="[Webcam] e.g. 30 FPS, 60 FPS"),
-    material: str | None = Query(None, description="[Gaming Chair] Mesh, PU Leather, Leather, Fabric"),
+    channels: list[str] | None = Query(None, description="[Speaker] 2.0, 2.1, 5.1, 7.1, Soundbar"),
+    power_output: list[str] | None = Query(None, description="[Speaker] e.g. 30W, 120W"),
+    webcam_resolution: list[str] | None = Query(None, description="[Webcam] 720p, 1080p, 2K, 4K"),
+    fps: list[str] | None = Query(None, description="[Webcam] e.g. 30 FPS, 60 FPS"),
+    autofocus: bool | None = Query(None, description="[Webcam] Has autofocus"),
+    material: list[str] | None = Query(None, description="[Gaming Chair] Mesh, PU Leather, Leather, Fabric"),
     footrest: bool | None = Query(None, description="[Gaming Chair] Has a footrest"),
-    printer_type: str | None = Query(None, description="[Printer] Laser, Inkjet, Dot Matrix, Thermal, Label"),
-    functions: str | None = Query(None, description="[Printer] Multifunction or Print Only"),
-    color_output: str | None = Query(None, description="[Printer] Color or Mono"),
+    massage: bool | None = Query(None, description="[Gaming Chair] Has massage function"),
+    printer_type: list[str] | None = Query(None, description="[Printer] Laser, Inkjet, Dot Matrix, Thermal, Label"),
+    functions: list[str] | None = Query(None, description="[Printer] Multifunction or Print Only"),
+    color_output: list[str] | None = Query(None, description="[Printer] Color or Mono"),
     duplex: bool | None = Query(None, description="[Printer] Automatic duplex printing"),
-    pad_size: str | None = Query(None, description="[Mouse Pad] Small, Medium, Large, XL, XXL, Extended, or WxHmm"),
-    platform: str | None = Query(None, description="[Gamepad] PC, PS4, PS5, Xbox, Nintendo Switch"),
+    pad_size: list[str] | None = Query(None, description="[Mouse Pad] Small, Medium, Large, XL, XXL, Extended, or WxHmm"),
+    stitched_edge: bool | None = Query(None, description="[Mouse Pad] Stitched edge"),
+    platform: list[str] | None = Query(None, description="[Gamepad] PC, PS4, PS5, Xbox, Nintendo Switch"),
     vibration: bool | None = Query(None, description="[Gamepad] Vibration / rumble feedback"),
 ):
     """
@@ -613,7 +627,9 @@ def list_products(
       /products?category=PSU&wattage=750W&efficiency=80%2B+Gold&modularity=Fully+Modular
       /products?category=Monitor&resolution=2560x1440&refresh_rate=144Hz&panel_type=IPS
     """
-    # Build specs_filter from all category-specific params
+    # Build specs_filter from all category-specific params. Multi-select (list)
+    # values are sorted so that ticking A then B produces the same cache key as
+    # B then A — selection order must never split the response cache.
     specs_filter: dict = {}
     for key_name, value in [
         ("speed", speed),
@@ -621,6 +637,7 @@ def list_products(
         ("form_factor", form_factor),
         ("heatsink", heatsink),
         ("ecc", ecc),
+        ("rgb", rgb),
         ("vram", vram),
         ("chipset", chipset),
         ("chipset_brand", chipset_brand),
@@ -636,18 +653,24 @@ def list_products(
         ("wifi", wifi),
         ("m2_slots", m2_slots),
         ("nand_type", nand_type),
+        ("rpm", rpm),
         ("wattage", wattage),
         ("efficiency", efficiency),
         ("modularity", modularity),
         ("atx30", atx30),
         ("type", cooler_type),
         ("radiator_size", radiator_size),
+        ("fan_size", fan_size),
         ("side_panel", side_panel),
         ("color", color),
         ("front_usb_c", front_usb_c),
+        ("screen_size", screen_size),
         ("resolution", resolution),
         ("refresh_rate", refresh_rate),
         ("panel_type", panel_type),
+        ("response_time", response_time),
+        ("curved", curved),
+        ("hdr", hdr),
         ("connectivity", connectivity),
         ("switch_type", switch_type),
         ("layout", layout),
@@ -663,18 +686,25 @@ def list_products(
         ("power_output", power_output),
         ("webcam_resolution", webcam_resolution),
         ("fps", fps),
+        ("autofocus", autofocus),
         ("material", material),
         ("footrest", footrest),
+        ("massage", massage),
         ("printer_type", printer_type),
         ("functions", functions),
         ("color_output", color_output),
         ("duplex", duplex),
         ("pad_size", pad_size),
+        ("stitched_edge", stitched_edge),
         ("platform", platform),
         ("vibration", vibration),
     ]:
         if value is not None:
-            specs_filter[key_name] = value
+            specs_filter[key_name] = sorted(value) if isinstance(value, list) else value
+
+    # generation / capacity also multi-select — normalise order for the cache key.
+    generation = sorted(generation) if generation else None
+    capacity = sorted(capacity) if capacity else None
 
     cache_key = product_list_cache.make_key(
         search, category, brand, generation, capacity,

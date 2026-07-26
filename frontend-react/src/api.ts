@@ -33,7 +33,14 @@ export function buildUrl(path: string, params?: Record<string, unknown>): string
   if (params) {
     for (const [k, v] of Object.entries(params).sort(([a], [b]) => a.localeCompare(b))) {
       if (v === undefined || v === null || v === "") continue;
-      url.searchParams.set(k, String(v));
+      if (Array.isArray(v)) {
+        // Multi-select → repeated params (?k=a&k=b). Sorted so the selection
+        // order can never split the cache: this URL doubles as the cache key.
+        for (const item of [...v].filter((x) => x !== "" && x != null).sort())
+          url.searchParams.append(k, String(item));
+      } else {
+        url.searchParams.set(k, String(v));
+      }
     }
   }
   return url.toString();

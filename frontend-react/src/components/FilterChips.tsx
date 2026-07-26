@@ -35,11 +35,24 @@ export function FilterChips({ filters, onChange, onReset }: Props) {
   }
   for (const [k, v] of Object.entries(filters.specs)) {
     if (v === undefined || v === null || v === "") continue;
-    const label = v === true ? humanizeKey(k) : `${humanizeKey(k)}: ${v}`;
-    chips.push({
-      label,
-      onRemove: () => onChange({ specs: { ...filters.specs, [k]: undefined } }),
-    });
+    if (Array.isArray(v)) {
+      // One chip per ticked value; removing a chip drops just that value.
+      for (const item of v) {
+        chips.push({
+          label: `${humanizeKey(k)}: ${item}`,
+          onRemove: () => {
+            const next = v.filter((x) => x !== item);
+            onChange({ specs: { ...filters.specs, [k]: next.length ? next : undefined } });
+          },
+        });
+      }
+    } else {
+      const label = v === true ? humanizeKey(k) : `${humanizeKey(k)}: ${v}`;
+      chips.push({
+        label,
+        onRemove: () => onChange({ specs: { ...filters.specs, [k]: undefined } }),
+      });
+    }
   }
 
   if (chips.length === 0) return null;

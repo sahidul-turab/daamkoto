@@ -30,7 +30,9 @@ function toParams(
     offset: (page - 1) * PAGE_SIZE,
   };
   for (const [k, v] of Object.entries(filters.specs)) {
-    if (v !== undefined && v !== null && v !== "") p[k] = v;
+    if (v === undefined || v === null || v === "") continue;
+    if (Array.isArray(v) && v.length === 0) continue;
+    p[k] = v;
   }
   return p;
 }
