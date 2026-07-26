@@ -77,7 +77,7 @@ function SpecMultiSelect({
           onChange={(e) => setQuery(e.target.value)}
         />
       )}
-      <div className="no-scrollbar max-h-44 overflow-y-auto rounded-xl border border-line bg-surface-2 p-1">
+      <div className="max-h-44 overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface-2 p-1">
         {shown.length === 0 ? (
           <div className="px-2 py-1.5 text-xs text-ink-4">No matches</div>
         ) : (
