@@ -10,6 +10,7 @@ import type {
   ScraperStatus,
   SellerSpecs,
 } from "./types";
+import { SNAPSHOT_BASE } from "./lib/bootstrap";
 import { prefetch as swrPrefetch, swr } from "./lib/swr";
 
 // In dev, Vite proxies /api -> http://127.0.0.1:8000 (see vite.config.ts).
@@ -54,6 +55,10 @@ export function buildUrl(path: string, params?: Record<string, unknown>): string
  */
 export function assetUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith("/media/cutouts/")) {
+    const filename = path.split("/").pop();
+    return `${SNAPSHOT_BASE}/cutouts/${filename}`;
+  }
   return BASE + path;
 }
 

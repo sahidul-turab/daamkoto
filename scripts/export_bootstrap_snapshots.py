@@ -40,6 +40,10 @@ from backend import database, queries  # noqa: E402
 PAGE_SIZE = 20
 SORTS = ("store_count_desc", "price_asc")
 SNAPSHOT_PREFIX = "snapshots/v1"
+R2_PUBLIC_BASE = (
+    os.getenv("R2_PUBLIC_BASE")
+    or "https://daamkoto-img.sahidulturab81.workers.dev"
+).rstrip("/")
 HOME_CATEGORIES = (
     "GPU",
     "PROCESSOR",
@@ -64,6 +68,15 @@ def json_default(value: Any) -> Any:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     raise TypeError(f"Cannot JSON-encode {type(value).__name__}")
+
+
+def normalize_cutout_urls(products: list[dict[str, Any]]) -> None:
+    """Rewrite local cutout paths to the public R2 Worker before publishing."""
+    for product in products:
+        for listing in product.get("listings", []):
+            path = listing.get("image_cutout")
+            if isinstance(path, str) and path.startswith("/media/cutouts/"):
+                listing["image_cutout"] = f"{R2_PUBLIC_BASE}/cutouts/{path.rsplit('/', 1)[-1]}"
 
 
 def make_r2_client():
@@ -147,6 +160,7 @@ def main() -> int:
                         limit=PAGE_SIZE,
                         offset=0,
                     )
+                    normalize_cutout_urls(products)
                     payload = {
                         "version": 1,
                         "generated_at": generated_at,
