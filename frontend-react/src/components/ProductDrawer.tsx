@@ -14,7 +14,7 @@ import {
 import { slotForCategory } from "../lib/buildConfig";
 import { api } from "../api";
 import { retailerColor } from "../config";
-import { formatBDT, formatSpecValue, humanizeKey } from "../lib/format";
+import { formatBDT, formatSpecValue, humanizeKey, relativeTime } from "../lib/format";
 import type { ProductHistory, ProductSummary, SellerSpecs } from "../types";
 import { PriceSpread } from "./PriceSpread";
 
@@ -31,9 +31,18 @@ interface Props {
   onAddToBuild?: (p: ProductSummary) => void;
   isWatched?: boolean;
   onToggleWatch?: (p: ProductSummary) => void;
+  isAdmin?: boolean;
 }
 
-export function ProductDrawer({ product, bundleOnly = false, onClose, onAddToBuild, isWatched, onToggleWatch }: Props) {
+export function ProductDrawer({
+  product,
+  bundleOnly = false,
+  onClose,
+  onAddToBuild,
+  isWatched,
+  onToggleWatch,
+  isAdmin = false,
+}: Props) {
   const [history, setHistory] = useState<ProductHistory | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [sellerSpecs, setSellerSpecs] = useState<SellerSpecs | null>(null);
@@ -48,8 +57,10 @@ export function ProductDrawer({ product, bundleOnly = false, onClose, onAddToBui
       .then(setHistory)
       .catch(() => setHistory(null))
       .finally(() => setLoadingHistory(false));
-    api.sellerSpecs(product.id).then(setSellerSpecs).catch(() => null);
-  }, [product]);
+    if (isAdmin) {
+      api.sellerSpecs(product.id).then(setSellerSpecs).catch(() => null);
+    }
+  }, [product, isAdmin]);
 
   // Close on Escape
   useEffect(() => {
@@ -150,10 +161,12 @@ export function ProductDrawer({ product, bundleOnly = false, onClose, onAddToBui
                   Price comparison · {listings.length}{" "}
                   {listings.length === 1 ? "store" : "stores"}
                 </div>
-                {/* Signature spread overview */}
-                <div className="mb-4 rounded-xl border border-line bg-surface-2/60 p-4">
-                  <PriceSpread listings={product.listings} variant="detail" />
-                </div>
+                {isAdmin && (
+                  <div className="mb-4 rounded-xl border border-line bg-surface-2/60 p-4">
+                    <div className="label mb-2">Admin price spread</div>
+                    <PriceSpread listings={product.listings} variant="detail" />
+                  </div>
+                )}
                 <div className="flex flex-col gap-2">
                   {listings.map((l, i) => {
                     const isCheapest =
@@ -202,6 +215,14 @@ export function ProductDrawer({ product, bundleOnly = false, onClose, onAddToBui
                                 ⚠ PC bundle only
                               </div>
                             )}
+                            {isAdmin && l.scraped_at && (
+                              <div
+                                className="mt-1 text-[10px] font-semibold text-warn"
+                                title={new Date(l.scraped_at).toLocaleString()}
+                              >
+                                Updated {relativeTime(l.scraped_at)}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -231,7 +252,7 @@ export function ProductDrawer({ product, bundleOnly = false, onClose, onAddToBui
               </div>
 
               {/* Seller-specs disagreement panel */}
-              {sellerSpecs && Object.keys(sellerSpecs.differing).length > 0 && (
+              {isAdmin && sellerSpecs && Object.keys(sellerSpecs.differing).length > 0 && (
                 <div className="mb-6">
                   <div className="label flex items-center gap-1.5">
                     <AlertTriangle className="h-3.5 w-3.5 text-warn" />

@@ -8,6 +8,7 @@ interface Props {
   onOpen: (p: ProductSummary) => void;
   onAddToBuild?: (p: ProductSummary) => void;
   showAddToBuild?: boolean;
+  showOperationalMeta?: boolean;
 }
 
 function SkeletonCard() {
@@ -25,7 +26,14 @@ function SkeletonCard() {
   );
 }
 
-export function ProductGrid({ products, loading, onOpen, onAddToBuild, showAddToBuild = false }: Props) {
+export function ProductGrid({
+  products,
+  loading,
+  onOpen,
+  onAddToBuild,
+  showAddToBuild = false,
+  showOperationalMeta = false,
+}: Props) {
   if (loading) {
     return (
       <div className="product-grid gap-4">
@@ -54,7 +62,15 @@ export function ProductGrid({ products, loading, onOpen, onAddToBuild, showAddTo
   return (
     <div className="product-grid gap-4">
       {products.map((p, i) => (
-        <ProductCard key={p.id} product={p} index={i} onOpen={onOpen} onAddToBuild={onAddToBuild} showAddToBuild={showAddToBuild} />
+        <ProductCard
+          key={p.id}
+          product={p}
+          index={i}
+          onOpen={onOpen}
+          onAddToBuild={onAddToBuild}
+          showAddToBuild={showAddToBuild}
+          showOperationalMeta={showOperationalMeta}
+        />
       ))}
     </div>
   );

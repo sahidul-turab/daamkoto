@@ -42,13 +42,14 @@ export function useProductSearch(
   categoryDb: string,
   filters: Filters,
   page: number,
+  active = true,
 ): { products: ProductSummary[]; total: number; loading: boolean } {
   // With neither a category nor a search term the query degenerates into an
   // aggregation over the whole catalogue — by far the slowest thing the API can
   // be asked to do, and nothing in the UI wants the result. SlotPicker hits this
   // whenever it is mounted with no slot chosen yet, so guard it here rather than
   // letting each caller remember to.
-  const enabled = Boolean(categoryDb) || Boolean(filters.search);
+  const enabled = active && (Boolean(categoryDb) || Boolean(filters.search));
 
   const params = useMemo(
     () => toParams(categoryDb, filters, page),

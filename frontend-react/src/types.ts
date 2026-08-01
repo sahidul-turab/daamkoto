@@ -33,6 +33,23 @@ export interface ProductList {
   products: ProductSummary[];
 }
 
+export interface HomeSection {
+  category: string;
+  total: number;
+  products: ProductSummary[];
+}
+
+export interface HomeSnapshot {
+  version: 1;
+  generated_at: string;
+  sections: HomeSection[];
+}
+
+export interface AdminLoginResponse {
+  token: string;
+  expires_at: string;
+}
+
 export interface PricePoint {
   retailer: string;
   price_bdt: number | null;

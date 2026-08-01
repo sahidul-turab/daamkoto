@@ -59,7 +59,12 @@ function runDuration(run: ScraperRun): string {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function ScraperDashboard() {
+interface Props {
+  adminToken: string;
+  onUnauthorized: () => void;
+}
+
+export function ScraperDashboard({ adminToken, onUnauthorized }: Props) {
   const [data, setData]       = useState<ScraperStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
@@ -74,15 +79,16 @@ export function ScraperDashboard() {
 
   const refresh = useCallback(async () => {
     try {
-      const d = await api.scraperStatus();
+      const d = await api.scraperStatus(adminToken);
       setData(d);
       setFetchErr(null);
     } catch (e) {
+      if (e instanceof ApiError && e.status === 401) onUnauthorized();
       setFetchErr(e instanceof ApiError ? e.message : "Failed to load scraper status");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [adminToken, onUnauthorized]);
 
   // Initial load
   useEffect(() => { refresh(); }, [refresh]);
@@ -103,7 +109,7 @@ export function ScraperDashboard() {
     setTriggering(true);
     setTriggerMsg(null);
     try {
-      const res = await api.triggerRun(selCat, [...selRets]);
+      const res = await api.triggerRun(adminToken, selCat, [...selRets]);
       setTriggerMsg({ ok: true, text: `Run #${res.run_id} started for ${selCat}. Auto-refreshing…` });
       setTimeout(refresh, 2500);
     } catch (e) {
@@ -249,7 +255,7 @@ export function ScraperDashboard() {
             </div>
           ) : (
             <p className="text-sm text-ink-4">
-              No runs recorded yet. Trigger one below, or run{" "}
+              No runs recorded yet. For a local refresh, run{" "}
               <code className="rounded bg-surface-2 px-1 text-xs">
                 python scheduler.py --once
               </code>
@@ -259,7 +265,22 @@ export function ScraperDashboard() {
 
         {/* Manual trigger */}
         <section className="glass rounded-2xl p-5">
-          <p className="label mb-4">Manual Trigger</p>
+          <p className="label mb-4">Pipeline Control</p>
+
+          {!import.meta.env.DEV ? (
+            <div className="rounded-xl border border-line bg-surface-2 p-5">
+              <div className="flex items-start gap-3">
+                <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-ok" />
+                <div>
+                  <div className="font-semibold">Automated daily refresh</div>
+                  <p className="mt-1 text-sm leading-relaxed text-ink-3">
+                    Production scraping runs through the scheduled GitHub Actions pipeline. This hosted API is intentionally read-only because it does not contain browser scraping dependencies.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
 
           {/* Category select */}
           <div className="mb-3">
@@ -344,6 +365,8 @@ export function ScraperDashboard() {
               {`# Run every category once, then exit:\npython scheduler.py --once\n\n# 12-hour repeating daemon:\npython scheduler.py`}
             </pre>
           </div>
+            </>
+          )}
         </section>
       </div>
 

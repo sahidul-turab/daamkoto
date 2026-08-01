@@ -26,6 +26,7 @@ Then open: http://localhost:8000/docs  (Swagger UI — interactive API explorer)
 
 import io
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -36,14 +37,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from backend import agent as agent_mod, database, queries
+from backend import admin_auth, agent as agent_mod, database, queries
 from backend.cache import (
     brands_cache,
     deals_cache,
@@ -162,6 +163,14 @@ _WARM_CATEGORIES = [
     "PRINTER", "MOUSE PAD", "GAMEPAD",
 ]
 
+_ALL_RUN_CATEGORIES = {
+    "ram", "laptop_ram", "gpu", "processor", "motherboard",
+    "ssd", "portable_ssd", "hdd", "portable_hdd", "psu", "cooler",
+    "casing_cooler", "casing", "monitor", "keyboard", "mouse",
+    "headset", "ups", "speaker", "webcam", "gaming_chair", "printer",
+    "mousepad", "gamepad",
+}
+
 # These must mirror frontend-react/src/config.ts (PAGE_SIZE) and
 # src/lib/filterDefaults.ts (sort) — a mismatch would warm cache keys that no
 # real request ever asks for, leaving every visitor on the slow path.
@@ -270,7 +279,7 @@ _CACHEABLE: tuple[tuple[str, str], ...] = (
 )
 
 # Never cache these — they report live state and must not be served stale.
-_NO_STORE_PREFIXES = ("/scrapers", "/alerts", "/chat", "/build", "/health")
+_NO_STORE_PREFIXES = ("/admin", "/scrapers", "/alerts", "/chat", "/build", "/health")
 
 
 @app.middleware("http")
@@ -306,12 +315,25 @@ async def cache_headers(request: Request, call_next):
 # the difference that shows up on a mobile connection.
 app.add_middleware(GZipMiddleware, minimum_size=800)
 
-# Allow the deployed frontend (or any local dev server) to call this API.
+# Allow the deployed frontend and the two conventional local development hosts.
+# Public data remains public, but an arbitrary third-party site should not be
+# able to drive authenticated admin requests from a browser.
+_frontend_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "FRONTEND_ORIGIN", "https://daamkoto.vercel.app"
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        *_frontend_origins,
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Serve background-removed product cutouts as static files. rembg runs offline
@@ -434,9 +456,36 @@ class RunRequest(BaseModel):
     retailers: list[str] = []        # empty → all retailers
 
 
+class AdminLoginRequest(BaseModel):
+    password: str
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
+@app.post("/admin/login")
+def admin_login(req: AdminLoginRequest, request: Request):
+    """Exchange the owner password for an opaque eight-hour bearer token."""
+    session = admin_auth.create_session(req.password, request)
+    return {
+        "token": session.token,
+        "expires_at": datetime.fromtimestamp(
+            session.expires_at, timezone.utc
+        ).isoformat(),
+    }
+
+
+@app.get("/admin/session")
+def admin_session(_token: str = Depends(admin_auth.require_admin)):
+    """Validate a stored admin token after a browser reload."""
+    return {"authenticated": True}
+
+
+@app.delete("/admin/session")
+def admin_logout(token: str = Depends(admin_auth.require_admin)):
+    admin_auth.revoke_session(token)
+    return {"authenticated": False}
 
 @app.get("/health")
 def health(deep: bool = Query(False, description="Also round-trip the database")):
@@ -821,7 +870,7 @@ def get_price_history(
     )
 
 
-@app.get("/scrapers/status")
+@app.get("/scrapers/status", dependencies=[Depends(admin_auth.require_admin)])
 def scraper_status():
     """
     Dashboard endpoint — returns:
@@ -849,7 +898,7 @@ def scraper_status():
     }
 
 
-@app.post("/scrapers/run")
+@app.post("/scrapers/run", dependencies=[Depends(admin_auth.require_admin)])
 def trigger_run(req: RunRequest):
     """
     Trigger a background pipeline run for one category.
@@ -859,46 +908,57 @@ def trigger_run(req: RunRequest):
 
     Example body: {"category": "ram", "retailers": ["startech", "ryans"]}
     """
-    retailers = req.retailers or _ALL_RETAILERS
+    category = req.category.strip().lower()
+    if category not in _ALL_RUN_CATEGORIES:
+        raise HTTPException(status_code=422, detail="Unknown scraper category.")
+
+    requested_retailers = [r.strip().lower() for r in req.retailers]
+    invalid_retailers = sorted(set(requested_retailers) - set(_ALL_RETAILERS))
+    if invalid_retailers:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown retailers: {', '.join(invalid_retailers)}",
+        )
+    retailers = requested_retailers or _ALL_RETAILERS
 
     # In-memory guard (fast path — catches threads started by *this* server process)
     with _active_runs_lock:
-        if req.category in _active_runs:
+        if category in _active_runs:
             raise HTTPException(
                 status_code=409,
-                detail=f"A run for '{req.category}' is already active "
-                       f"(run_id={_active_runs[req.category]})",
+                detail=f"A run for '{category}' is already active "
+                       f"(run_id={_active_runs[category]})",
             )
 
     # DB guard (catches runs started by the scheduler daemon or another process)
     try:
         with database.get_db() as conn:
-            existing = queries.get_active_run(conn, req.category)
+            existing = queries.get_active_run(conn, category)
             if existing:
                 raise HTTPException(
                     status_code=409,
-                    detail=f"A run for '{req.category}' is already RUNNING in the DB "
+                    detail=f"A run for '{category}' is already RUNNING in the DB "
                            f"(run_id={existing['id']})",
                 )
-            run_id = queries.create_scraper_run(conn, req.category, retailers)
+            run_id = queries.create_scraper_run(conn, category, retailers)
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"DB error: {exc}")
 
     with _active_runs_lock:
-        _active_runs[req.category] = run_id
+        _active_runs[category] = run_id
 
     threading.Thread(
         target=_run_pipeline_bg,
-        args=(run_id, req.category, retailers),
+        args=(run_id, category, retailers),
         daemon=True,
     ).start()
 
     return {
         "run_id":    run_id,
         "status":    "RUNNING",
-        "category":  req.category,
+        "category":  category,
         "retailers": retailers,
     }
 

@@ -1,5 +1,5 @@
 import { PAGE_SIZE } from "../config";
-import type { ProductList } from "../types";
+import type { HomeSnapshot, ProductList } from "../types";
 
 /**
  * Database-generated first pages published after every daily scrape.
@@ -71,6 +71,52 @@ function isProductList(value: unknown): value is ProductList {
     typeof candidate.offset === "number" &&
     Array.isArray(candidate.products)
   );
+}
+
+function isHomeSnapshot(value: unknown): value is HomeSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<HomeSnapshot>;
+  return (
+    candidate.version === 1 &&
+    typeof candidate.generated_at === "string" &&
+    Array.isArray(candidate.sections) &&
+    candidate.sections.every(
+      (section) =>
+        !!section &&
+        typeof section.category === "string" &&
+        typeof section.total === "number" &&
+        Array.isArray(section.products),
+    )
+  );
+}
+
+let homeRequest: Promise<HomeSnapshot | null> | null = null;
+let homeRequestBucket = -1;
+
+/** One edge-cached request powers every product section on the homepage. */
+export function fetchHomeSnapshot(force = false): Promise<HomeSnapshot | null> {
+  const version = Math.floor(Date.now() / CACHE_BUCKET_MS);
+  if (!force && homeRequest && homeRequestBucket === version) return homeRequest;
+
+  homeRequestBucket = version;
+  homeRequest = (async () => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(
+        `${SNAPSHOT_BASE}/snapshots/v1/home.json?v=${version}`,
+        { cache: force ? "reload" : "force-cache", signal: controller.signal },
+      );
+      if (!response.ok) return null;
+      const payload: unknown = await response.json();
+      return isHomeSnapshot(payload) ? payload : null;
+    } catch {
+      return null;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  })();
+  return homeRequest;
 }
 
 /** Return null when the query is not snapshot-compatible or the edge is down. */

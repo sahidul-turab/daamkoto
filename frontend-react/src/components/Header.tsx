@@ -1,10 +1,9 @@
-import { Activity, Bookmark, Boxes, Search, Sparkles, Store, Tag, X } from "lucide-react";
+import { Bookmark, Boxes, Home, LockKeyhole, LogOut, Search, Sparkles, Store, Tag } from "lucide-react";
 
-export type View = "browse" | "build" | "deals" | "scraper";
+export type View = "home" | "browse" | "build" | "deals" | "admin";
 
 interface Props {
-  search: string;
-  onSearch: (v: string) => void;
+  onGoHome: () => void;
   onOpenChat: () => void;
   onOpenPalette: () => void;
   totalRetailers: number;
@@ -13,11 +12,12 @@ interface Props {
   buildCount: number;
   watchlistCount: number;
   onOpenWatchlist: () => void;
+  isAdmin: boolean;
+  onLogout: () => void;
 }
 
 export function Header({
-  search,
-  onSearch,
+  onGoHome,
   onOpenChat,
   onOpenPalette,
   totalRetailers,
@@ -26,12 +26,19 @@ export function Header({
   buildCount,
   watchlistCount,
   onOpenWatchlist,
+  isAdmin,
+  onLogout,
 }: Props) {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/70 backdrop-blur-xl">
       <div className="app-shell flex flex-wrap items-center gap-3 py-3 lg:flex-nowrap lg:gap-4">
         {/* Logo */}
-        <div className="order-1 flex shrink-0 items-center gap-3">
+        <button
+          type="button"
+          onClick={onGoHome}
+          className="order-1 flex shrink-0 items-center gap-3 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+          aria-label="Go to DaamKoto homepage"
+        >
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-strong text-white shadow-[0_8px_24px_-8px_rgba(227,30,36,0.9)]">
             <span className="text-lg font-black">৳</span>
           </div>
@@ -43,10 +50,18 @@ export function Header({
               দাম কত? · {totalRetailers > 0 ? `${totalRetailers} retailers` : "Bangladesh"}
             </div>
           </div>
-        </div>
+        </button>
 
         {/* View switch */}
         <div className="no-scrollbar order-4 flex w-full shrink-0 overflow-x-auto rounded-xl border border-line bg-surface-2 p-1 text-sm font-semibold lg:order-2 lg:w-auto">
+          <button
+            onClick={() => onViewChange("home")}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors ${
+              view === "home" ? "bg-brand-strong text-white" : "text-ink-3 hover:text-ink"
+            }`}
+          >
+            <Home className="h-4 w-4" /> Home
+          </button>
           <button
             onClick={() => onViewChange("browse")}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors ${
@@ -78,43 +93,33 @@ export function Header({
             <Tag className="h-4 w-4" /> Deals
           </button>
           <button
-            onClick={() => onViewChange("scraper")}
+            onClick={() => onViewChange("admin")}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors ${
-              view === "scraper" ? "bg-brand-strong text-white" : "text-ink-3 hover:text-ink"
+              view === "admin" ? "bg-brand-strong text-white" : "text-ink-3 hover:text-ink"
             }`}
-            title="Scraper Health Dashboard"
+            title={isAdmin ? "Owner dashboard" : "Owner sign in"}
           >
-            <Activity className="h-4 w-4" /> Scraper
+            <LockKeyhole className="h-4 w-4" /> Admin
+            {isAdmin && <span className="h-1.5 w-1.5 rounded-full bg-ok" />}
           </button>
         </div>
 
         {/* Search */}
-        <div className="relative order-5 w-full lg:order-3 lg:flex-1">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-4" />
-          <input
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder="Search a part — e.g. RTX 4060, 16GB DDR5, 990 Pro…"
-            className="field !rounded-xl !py-3 pl-10 pr-10"
-          />
-          {search ? (
-            <button
-              onClick={() => onSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-4 hover:text-ink"
-              aria-label="Clear search"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          ) : (
-            <button
-              onClick={onOpenPalette}
-              className="absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-md border border-line bg-surface-2 px-2 py-1 text-[11px] font-semibold text-ink-4 transition-colors hover:border-line-2 hover:text-ink-2 sm:flex"
-              aria-label="Open command palette"
-            >
-              <span className="text-sm leading-none">⌘</span>K
-            </button>
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={onOpenPalette}
+          className="group order-5 flex w-full items-center gap-3 rounded-xl border border-brand/45 bg-brand-strong/[0.07] px-3.5 py-2.5 text-left shadow-[0_8px_30px_-18px_rgba(239,35,42,0.9)] transition-all hover:border-brand hover:bg-brand-strong/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand lg:order-3 lg:flex-1"
+          aria-label="Search products across all categories"
+        >
+          <Search className="h-4 w-4 shrink-0 text-brand" />
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink-2 group-hover:text-ink">
+            Search products
+            <span className="ml-2 hidden font-normal text-ink-4 xl:inline">RTX 4060, Ryzen 7, 990 Pro…</span>
+          </span>
+          <span className="hidden shrink-0 items-center gap-1 rounded-md border border-brand/25 bg-surface-2 px-2 py-1 text-[10px] font-semibold text-ink-4 sm:flex">
+            Ctrl K
+          </span>
+        </button>
 
         {/* Watchlist */}
         <button
@@ -129,6 +134,17 @@ export function Header({
             </span>
           )}
         </button>
+
+        {isAdmin && (
+          <button
+            onClick={onLogout}
+            className="btn-ghost order-3 shrink-0 !rounded-xl !p-3 lg:order-5"
+            title="Sign out of admin"
+            aria-label="Sign out of admin"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        )}
 
         {/* AI button */}
         <button onClick={onOpenChat} className="btn-brand order-3 shrink-0 lg:order-5" aria-label="Ask AI">

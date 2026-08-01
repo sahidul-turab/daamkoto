@@ -40,6 +40,17 @@ from backend import database, queries  # noqa: E402
 PAGE_SIZE = 20
 SORTS = ("store_count_desc", "price_asc")
 SNAPSHOT_PREFIX = "snapshots/v1"
+HOME_CATEGORIES = (
+    "GPU",
+    "PROCESSOR",
+    "MOTHERBOARD",
+    "RAM DESKTOP",
+    "SSD",
+    "MONITOR",
+    "KEYBOARD",
+    "MOUSE",
+)
+HOME_PRODUCTS_PER_CATEGORY = 4
 
 
 def category_slug(category: str) -> str:
@@ -119,6 +130,7 @@ def main() -> int:
     bucket = os.getenv("R2_BUCKET", "daamkoto-images")
     generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     published: list[dict[str, str]] = []
+    home_sections_by_category: dict[str, dict[str, Any]] = {}
 
     database.init_pool(min_conn=1, max_conn=2)
     try:
@@ -143,6 +155,28 @@ def main() -> int:
                         "offset": 0,
                         "products": products,
                     }
+
+                    # Reuse the widest-availability page for the homepage feed.
+                    # Some historic rows share a match_key, so dedupe before
+                    # choosing the four cards a visitor sees.
+                    if sort == "store_count_desc" and category in HOME_CATEGORIES:
+                        seen: set[str] = set()
+                        featured: list[dict[str, Any]] = []
+                        for product in products:
+                            identity = str(
+                                product.get("match_key") or product.get("id")
+                            ).casefold()
+                            if identity in seen:
+                                continue
+                            seen.add(identity)
+                            featured.append(product)
+                            if len(featured) >= HOME_PRODUCTS_PER_CATEGORY:
+                                break
+                        home_sections_by_category[category] = {
+                            "category": category,
+                            "total": total,
+                            "products": featured,
+                        }
                     body = json.dumps(
                         payload,
                         default=json_default,
@@ -160,6 +194,31 @@ def main() -> int:
                     print(f"{category:<18} {sort:<20} {len(body) / 1024:7.1f} KiB")
     finally:
         database.close_pool()
+
+    # A single small CDN object powers every homepage section. This avoids both
+    # a Render cold start and eight parallel category snapshot requests.
+    home_payload = {
+        "version": 1,
+        "generated_at": generated_at,
+        "sections": [
+            home_sections_by_category[category]
+            for category in HOME_CATEGORIES
+            if category in home_sections_by_category
+        ],
+    }
+    home_body = json.dumps(
+        home_payload,
+        default=json_default,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    home_key = f"{SNAPSHOT_PREFIX}/home.json"
+    if args.output_dir is not None:
+        write_local(args.output_dir, home_key, home_body)
+    if r2 is not None:
+        upload_snapshot(r2, bucket, home_key, home_body)
+    published.append({"category": "HOME", "sort": "featured", "key": home_key})
+    print(f"{'HOME':<18} {'featured':<20} {len(home_body) / 1024:7.1f} KiB")
 
     manifest = json.dumps(
         {"version": 1, "generated_at": generated_at, "snapshots": published},

@@ -1,5 +1,6 @@
 import type {
   Alert,
+  AdminLoginResponse,
   ChatContext,
   ChatResponse,
   Deal,
@@ -66,6 +67,25 @@ async function get<T>(path: string, params?: Record<string, unknown>): Promise<T
   return fetchJson<T>(buildUrl(path, params), path);
 }
 
+async function adminRequest<T>(
+  path: string,
+  token: string,
+  method: "GET" | "POST" | "DELETE" = "GET",
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(new URL(BASE + path, window.location.origin), {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new ApiError(res.status, `${path} → ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
 /** Same as `get`, but served through the client cache (see lib/swr.ts). */
 function cachedGet<T>(
   path: string,
@@ -78,6 +98,23 @@ function cachedGet<T>(
 
 export const api = {
   health: () => get<{ status: string }>("/health"),
+
+  adminLogin: async (password: string) => {
+    const res = await fetch(new URL(BASE + "/admin/login", window.location.origin), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new ApiError(res.status, `/admin/login → ${res.status}`);
+    return res.json() as Promise<AdminLoginResponse>;
+  },
+
+  adminSession: (token: string) =>
+    adminRequest<{ authenticated: boolean }>("/admin/session", token),
+
+  adminLogout: (token: string) =>
+    adminRequest<{ authenticated: boolean }>("/admin/session", token, "DELETE"),
 
   categories: () => cachedGet<string[]>("/categories"),
 
@@ -190,19 +227,20 @@ export const api = {
 
   // ── Scraper ──────────────────────────────────────────────────────────────
 
-  scraperStatus: () => get<ScraperStatus>("/scrapers/status"),
+  scraperStatus: (token: string) =>
+    adminRequest<ScraperStatus>("/scrapers/status", token),
 
   triggerRun: async (
+    token: string,
     category: string,
     retailers: string[],
   ): Promise<{ run_id: number; status: string }> => {
-    const res = await fetch(new URL(BASE + "/scrapers/run", window.location.origin), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ category, retailers }),
-    });
-    if (!res.ok) throw new ApiError(res.status, `/scrapers/run → ${res.status}`);
-    return res.json() as Promise<{ run_id: number; status: string }>;
+    return adminRequest<{ run_id: number; status: string }>(
+      "/scrapers/run",
+      token,
+      "POST",
+      { category, retailers },
+    );
   },
 };
 

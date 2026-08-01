@@ -8,6 +8,8 @@ import { FilterSidebar } from "./components/FilterSidebar";
 import { FilterChips } from "./components/FilterChips";
 import { ProductGrid } from "./components/ProductGrid";
 import { Pagination } from "./components/Pagination";
+import { HomeView } from "./components/HomeView";
+import { AdminLogin } from "./components/AdminLogin";
 
 // Everything below is off the browse view's first paint: three other views the
 // user has to navigate to, and four overlays that only exist once opened. They
@@ -26,6 +28,7 @@ import { useWatchlist } from "./lib/useWatchlist";
 import { useUrlFilters } from "./lib/useUrlFilters";
 import { prefetchAllCategories } from "./lib/prefetch";
 import { slotForCategory } from "./lib/buildConfig";
+import { useAdminSession } from "./lib/useAdminSession";
 import { CATEGORIES } from "./config";
 import { Check, SlidersHorizontal } from "lucide-react";
 
@@ -49,11 +52,26 @@ function ViewLoading() {
   );
 }
 
+function viewFromLocation(): View {
+  const hash = window.location.hash.toLowerCase();
+  const params = new URLSearchParams(window.location.search);
+  const browseKeys = new Set(["cat", "q", "brand", "min", "max", "stock", "bundle", "sort", "page"]);
+  const hasBrowseQuery = [...params.keys()].some(
+    (key) => browseKeys.has(key) || key.startsWith("spec_"),
+  );
+  if (hash.startsWith("#build")) return "build";
+  if (hash.startsWith("#deals")) return "deals";
+  if (hash.startsWith("#admin") || hash.startsWith("#scraper")) return "admin";
+  if (hash.startsWith("#browse") || hasBrowseQuery) return "browse";
+  return "home";
+}
+
 export default function App() {
   const {
     category, filters, page, setPage,
     onSelectCategory, patchFilters, resetFilters, totalPages,
   } = useUrlFilters();
+  const admin = useAdminSession();
 
   const [selected, setSelected] = useState<ProductSummary | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -61,12 +79,7 @@ export default function App() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [retailerCount, setRetailerCount] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [view, setView] = useState<View>(() => {
-    if (window.location.hash.startsWith("#build"))   return "build";
-    if (window.location.hash.startsWith("#scraper")) return "scraper";
-    if (window.location.hash.startsWith("#deals"))   return "deals";
-    return "browse";
-  });
+  const [view, setView] = useState<View>(viewFromLocation);
   const [addedToast, setAddedToast] = useState<string | null>(null);
 
   // An overlay's chunk is only worth downloading once the user has actually
@@ -79,6 +92,36 @@ export default function App() {
 
   const { build, setPart, addLine, setQty, removeLine, setLineRetailer, removePart, clear, shareUrl, count: buildCount } = useBuild();
   const { items: watchlist, isWatched, toggle: toggleWatch, remove: removeWatched } = useWatchlist();
+
+  const navigateView = useCallback((next: View) => {
+    const hash = next === "home" ? "" : `#${next}`;
+    const search = next === "home" ? "" : window.location.search;
+    window.history.pushState(null, "", `${window.location.pathname}${search}${hash}`);
+    setView(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const goHome = useCallback(() => {
+    resetFilters();
+    onSelectCategory(CATEGORIES[0]);
+    navigateView("home");
+  }, [navigateView, onSelectCategory, resetFilters]);
+
+  const browseCategory = useCallback((nextCategory: (typeof CATEGORIES)[number]) => {
+    onSelectCategory(nextCategory);
+    patchFilters({ search: "" });
+    navigateView("browse");
+  }, [navigateView, onSelectCategory, patchFilters]);
+
+  useEffect(() => {
+    const syncView = () => setView(viewFromLocation());
+    window.addEventListener("popstate", syncView);
+    window.addEventListener("hashchange", syncView);
+    return () => {
+      window.removeEventListener("popstate", syncView);
+      window.removeEventListener("hashchange", syncView);
+    };
+  }, []);
 
   // Once: how many retailers exist (for the header subtitle).
   useEffect(() => {
@@ -106,10 +149,10 @@ export default function App() {
     } else {
       setPart(slotId, p);
     }
-    setView("build");
+    navigateView("build");
     setAddedToast(p.name);
     setTimeout(() => setAddedToast(null), 2200);
-  }, [setPart, addLine, setView]);
+  }, [setPart, addLine, navigateView]);
 
   // Global ⌘K / Ctrl-K.
   useEffect(() => {
@@ -140,29 +183,55 @@ export default function App() {
     return () => { window.removeEventListener("pointermove", onMove); if (raf) cancelAnimationFrame(raf); };
   }, []);
 
-  const { products, total, loading } = useProductSearch(category.db, filters, page);
+  const { products, total, loading } = useProductSearch(
+    view === "browse" ? category.db : "",
+    filters,
+    page,
+    view === "browse",
+  );
   const numTotalPages = totalPages(total);
 
   return (
     <div className="min-h-screen">
       <Header
-        search={filters.search}
-        onSearch={(v) => patchFilters({ search: v })}
+        onGoHome={goHome}
         onOpenChat={() => setChatOpen(true)}
         onOpenPalette={() => setPaletteOpen(true)}
         totalRetailers={retailerCount}
         view={view}
-        onViewChange={setView}
+        onViewChange={navigateView}
         buildCount={buildCount}
         watchlistCount={watchlist.length}
         onOpenWatchlist={() => setWatchlistOpen(true)}
+        isAdmin={admin.authenticated}
+        onLogout={() => {
+          admin.logout();
+          if (view === "admin") navigateView("home");
+        }}
       />
 
       <main className="app-shell py-6">
-        {view === "scraper" ? (
-          <Suspense fallback={<ViewLoading />}>
-            <ScraperDashboard />
-          </Suspense>
+        {view === "admin" ? (
+          admin.authenticated && admin.token ? (
+            <Suspense fallback={<ViewLoading />}>
+              <ScraperDashboard
+                adminToken={admin.token}
+                onUnauthorized={admin.invalidate}
+              />
+            </Suspense>
+          ) : (
+            <AdminLogin checking={admin.checking} onLogin={admin.login} />
+          )
+        ) : view === "home" ? (
+          <HomeView
+            retailerCount={retailerCount}
+            isAdmin={admin.authenticated}
+            onSearch={() => setPaletteOpen(true)}
+            onBrowseCategory={browseCategory}
+            onOpenProduct={setSelected}
+            onOpenBuild={() => navigateView("build")}
+            onOpenDeals={() => navigateView("deals")}
+          />
         ) : view === "deals" ? (
           <Suspense fallback={<ViewLoading />}>
             <DealsView onOpenProduct={setSelected} />
@@ -184,7 +253,7 @@ export default function App() {
           </Suspense>
         ) : (
           <>
-            <CategoryTabs active={category} onSelect={onSelectCategory} />
+            <CategoryTabs active={category} onSelect={browseCategory} />
 
             <div className="mt-6 flex items-center justify-between">
               <h1 className="text-lg font-bold">
@@ -220,6 +289,7 @@ export default function App() {
                   loading={loading}
                   onOpen={setSelected}
                   onAddToBuild={addToBuild}
+                  showOperationalMeta={admin.authenticated}
                 />
                 <Pagination page={page} totalPages={numTotalPages} onChange={setPage} />
               </div>
@@ -272,6 +342,7 @@ export default function App() {
             onAddToBuild={addToBuild}
             isWatched={selected ? isWatched(selected.id) : false}
             onToggleWatch={toggleWatch}
+            isAdmin={admin.authenticated}
           />
         </Suspense>
       )}
@@ -288,7 +359,7 @@ export default function App() {
         onAddToBuild={(_productId, _slot) => {
           // Agent requested add-to-build — switch to build view.
           // Full integration (auto-add by ID) is a future enhancement.
-          setView("build");
+          navigateView("build");
         }}
         onApplyFilters={(cat, specs) => {
           // Agent applied filters — switch to browse with those filters
@@ -296,11 +367,11 @@ export default function App() {
           if (found) onSelectCategory(found);
           if (Object.keys(specs).length > 0) patchFilters({ specs });
           setChatOpen(false);
-          setView("browse");
+          navigateView("browse");
         }}
         onOpenDeals={() => {
           setChatOpen(false);
-          setView("deals");
+          navigateView("deals");
         }}
         context={{
           category: category.db || null,
@@ -315,8 +386,12 @@ export default function App() {
       </Suspense>
       )}
 
-      <footer className="app-shell py-10 text-center text-xs text-ink-4">
-        DaamKoto · Prices in BDT, updated on every scrape · Bangladesh
+      <footer className="app-shell flex flex-wrap items-center justify-center gap-x-3 gap-y-2 py-10 text-center text-xs text-ink-4">
+        <span>DaamKoto · Prices in BDT · Bangladesh</span>
+        <span aria-hidden="true">·</span>
+        <button className="transition-colors hover:text-brand" onClick={() => navigateView("admin")}>
+          {admin.authenticated ? "Admin dashboard" : "Owner access"}
+        </button>
       </footer>
     </div>
   );

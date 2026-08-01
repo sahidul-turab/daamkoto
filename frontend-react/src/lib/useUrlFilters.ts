@@ -4,11 +4,11 @@
  *  - the browser back/forward buttons work correctly
  *  - page refresh restores the exact same view
  *
- * We use `history.replaceState` (not pushState) for most filter changes so
- * the back-button stack doesn't explode on every keystroke. Category switches
- * do use pushState so they're a navigable step.
+ * We use `history.replaceState` so filter effects never create duplicate
+ * history entries. App.tsx owns view/category navigation and pushes one clean
+ * entry for the action the user actually took.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CATEGORIES, PAGE_SIZE, type CategoryDef } from "../config";
 import type { Filters } from "../types";
 import { DEFAULT_FILTERS } from "./filterDefaults";
@@ -80,17 +80,12 @@ export function useUrlFilters() {
   const [filters, setFilters] = useState<Filters>(initial.filters);
   const [page, setPage] = useState(initial.page);
 
-  // Keep URL in sync. Category changes push history; all other changes replace.
-  const prevCat = useRef(initial.cat.db);
+  // Keep URL in sync without adding a second entry after App navigation.
   useEffect(() => {
     const qs = encode(category, filters, page);
-    const url = qs ? `?${qs}` : window.location.pathname;
-    if (category.db !== prevCat.current) {
-      window.history.pushState(null, "", url);
-      prevCat.current = category.db;
-    } else {
-      window.history.replaceState(null, "", url);
-    }
+    const pathAndQuery = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    const url = `${pathAndQuery}${window.location.hash}`;
+    window.history.replaceState(null, "", url);
   }, [category, filters, page]);
 
   // Handle browser back/forward.
@@ -100,7 +95,6 @@ export function useUrlFilters() {
       setCategory(cat);
       setFilters(f);
       setPage(pg);
-      prevCat.current = cat.db;
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);

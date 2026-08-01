@@ -33,6 +33,7 @@ interface Props {
   onOpen: (p: ProductSummary) => void;
   onAddToBuild?: (p: ProductSummary) => void;
   showAddToBuild?: boolean;
+  showOperationalMeta?: boolean;
 }
 
 function staleness(scraped_at: string): { label: string; color: string } {
@@ -43,7 +44,14 @@ function staleness(scraped_at: string): { label: string; color: string } {
   return { label: `${days}d ago`, color: "#ef4444" };
 }
 
-export function ProductCard({ product, index, onOpen, onAddToBuild, showAddToBuild = false }: Props) {
+export function ProductCard({
+  product,
+  index,
+  onOpen,
+  onAddToBuild,
+  showAddToBuild = false,
+  showOperationalMeta = false,
+}: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
 
   const inStock = product.listings.filter((l) => l.in_stock && l.price_bdt != null);
@@ -211,7 +219,7 @@ export function ProductCard({ product, index, onOpen, onAddToBuild, showAddToBui
                 {product.cheapest_retailer}
               </div>
             )}
-            {cheapestListing?.scraped_at && (() => {
+            {showOperationalMeta && cheapestListing?.scraped_at && (() => {
               const { label, color } = staleness(cheapestListing.scraped_at);
               return (
                 <div className="mt-0.5 flex items-center gap-1 text-[10px] font-semibold" style={{ color }}>
@@ -228,9 +236,11 @@ export function ProductCard({ product, index, onOpen, onAddToBuild, showAddToBui
         </div>
 
         {/* Price-spread rail */}
-        <div className="mt-4">
-          <PriceSpread listings={product.listings} variant="card" />
-        </div>
+        {showOperationalMeta && (
+          <div className="mt-4">
+            <PriceSpread listings={product.listings} variant="card" />
+          </div>
+        )}
 
         {/* Add to Build button — always visible when the product maps to a build slot */}
         {canAddToBuild && (
