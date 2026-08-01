@@ -1,18 +1,44 @@
-import { Suspense, lazy, useMemo, useState } from "react";
-import { Check, Minus, Plus, RotateCcw, Share2, X } from "lucide-react";
+import { Suspense, lazy, useMemo, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronRight,
+  Eye,
+  Minus,
+  PackageCheck,
+  Plus,
+  RotateCcw,
+  Share2,
+  ShieldCheck,
+  ShoppingBag,
+  Sparkles,
+  X,
+  Zap,
+} from "lucide-react";
 import { CategoryIcon } from "../Icon";
 import { SlotPicker } from "./SlotPicker";
 import { CompatReport } from "./CompatReport";
 import { WattageGauge } from "./WattageGauge";
-import { SLOTS, isMulti, slotLines, type BuildState, type SlotId } from "../../lib/buildConfig";
+import {
+  SLOTS,
+  isMulti,
+  slotDef,
+  slotLines,
+  type BuildLine,
+  type BuildState,
+  type SlotId,
+} from "../../lib/buildConfig";
 import { evaluateBuild } from "../../lib/compat";
-import { computeBasket } from "../../lib/basket";
+import { computeBasket, type BasketItem } from "../../lib/basket";
 import { retailerColor } from "../../config";
 import { formatBDT } from "../../lib/format";
 import { useCountUp } from "../../lib/useCountUp";
 import type { ProductSummary } from "../../types";
 
 const Rig3D = lazy(() => import("./Rig3D"));
+
+type DetailTab = "overview" | "compatibility" | "prices";
+type SlotDefinition = (typeof SLOTS)[number];
 
 interface Props {
   build: BuildState;
@@ -25,6 +51,234 @@ interface Props {
   onClear: () => void;
   onShare: () => string;
   onOpenProduct: (p: ProductSummary) => void;
+}
+
+interface BuildSlotCardProps {
+  slot: SlotDefinition;
+  step: number;
+  lines: BuildLine[];
+  basketItems: BasketItem[];
+  hasError: boolean;
+  onChoose: () => void;
+  onOpenProduct: (p: ProductSummary) => void;
+  onRemoveSlot: () => void;
+  onRemoveLine: (index: number) => void;
+  onSetQty: (index: number, qty: number) => void;
+}
+
+function BuildSlotCard({
+  slot,
+  step,
+  lines,
+  basketItems,
+  hasError,
+  onChoose,
+  onOpenProduct,
+  onRemoveSlot,
+  onRemoveLine,
+  onSetQty,
+}: BuildSlotCardProps) {
+  const multi = isMulti(slot.id);
+  const maxLines = ((slot as Record<string, unknown>).maxLines as number | undefined) ?? 1;
+  const selected = lines.length > 0;
+
+  return (
+    <article
+      className={`min-w-0 rounded-2xl border p-3.5 transition-colors sm:p-4 ${
+        hasError
+          ? "border-brand/60 bg-brand-strong/[0.06]"
+          : selected
+            ? "border-line-2 bg-surface-2/75"
+            : "border-line bg-surface-2/35 hover:border-line-2"
+      }`}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={`relative grid h-10 w-10 shrink-0 place-items-center rounded-xl border ${
+            selected ? "border-brand/25 bg-brand-strong/10 text-brand" : "border-line bg-surface text-ink-3"
+          }`}
+        >
+          <CategoryIcon name={slot.icon} className="h-[18px] w-[18px]" />
+          <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full border border-line bg-surface px-1 text-[9px] font-bold text-ink-3">
+            {step}
+          </span>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <h3 className="truncate text-sm font-bold text-ink">{slot.label}</h3>
+            {hasError ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-brand-strong/12 px-2 py-0.5 text-[10px] font-semibold text-brand">
+                <AlertTriangle className="h-2.5 w-2.5" /> Check fit
+              </span>
+            ) : selected ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-ok">
+                <Check className="h-2.5 w-2.5" /> Selected
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-0.5 text-[11px] text-ink-4">
+            {selected
+              ? multi
+                ? `${lines.length} ${lines.length === 1 ? "product" : "products"} added`
+                : "Ready to compare"
+              : `Step ${step} of ${SLOTS.length}`}
+          </p>
+        </div>
+
+        {selected && (
+          <button
+            type="button"
+            onClick={onRemoveSlot}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-4 transition-colors hover:bg-brand-strong/10 hover:text-brand"
+            aria-label={`Remove ${slot.label}`}
+            title={`Remove ${slot.label}`}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {!selected ? (
+        <button
+          type="button"
+          onClick={onChoose}
+          className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-dashed border-line px-3.5 py-3 text-left text-[13px] font-semibold text-ink-2 transition-colors hover:border-brand/40 hover:bg-brand-strong/[0.05] hover:text-ink"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <Plus className="h-4 w-4 shrink-0 text-brand" />
+            Choose {slot.label.toLowerCase()}
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-ink-4" />
+        </button>
+      ) : multi ? (
+        <div className="mt-3 min-w-0 space-y-2">
+          {lines.map((line, index) => {
+            const basketItem = basketItems.find((item) => item.lineIndex === index);
+            const retailer = basketItem?.retailer ?? line.product.cheapest_retailer;
+            const linePrice =
+              basketItem?.lineTotal ??
+              (line.product.cheapest_price != null ? line.product.cheapest_price * line.qty : null);
+
+            return (
+              <div key={`${line.product.id}-${index}`} className="min-w-0 rounded-xl border border-line bg-surface/65 p-3">
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onOpenProduct(line.product)}
+                    className="min-w-0 text-left text-[12px] font-semibold leading-snug text-ink hover:text-brand"
+                  >
+                    <span className="line-clamp-2 break-words">{line.product.name}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveLine(index)}
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-4 hover:bg-brand-strong/10 hover:text-brand"
+                    aria-label={`Remove ${line.product.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+
+                <div className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-ink-4">
+                    {retailer && (
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ background: retailerColor(retailer) }}
+                      />
+                    )}
+                    <span className="max-w-[9rem] truncate">{retailer ?? "Price unavailable"}</span>
+                  </div>
+                  <span className="shrink-0 text-[12px] font-bold tabular-nums text-ink">
+                    {formatBDT(linePrice)}
+                  </span>
+                </div>
+
+                <div className="mt-2 flex items-center justify-between gap-3 border-t border-line/70 pt-2">
+                  <span className="text-[10px] uppercase tracking-wide text-ink-4">Quantity</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onSetQty(index, line.qty - 1)}
+                      disabled={line.qty <= 1}
+                      className="grid h-8 w-8 place-items-center rounded-lg border border-line text-ink-3 hover:border-line-2 hover:text-brand disabled:opacity-30"
+                      aria-label={`Decrease quantity of ${line.product.name}`}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </button>
+                    <span className="w-5 text-center text-[12px] font-bold tabular-nums text-ink">
+                      {line.qty}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onSetQty(index, line.qty + 1)}
+                      disabled={line.qty >= 8}
+                      className="grid h-8 w-8 place-items-center rounded-lg border border-line text-ink-3 hover:border-line-2 hover:text-brand disabled:opacity-30"
+                      aria-label={`Increase quantity of ${line.product.name}`}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {lines.length < maxLines && (
+            <button
+              type="button"
+              onClick={onChoose}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-line py-2 text-[11px] font-semibold text-ink-3 hover:border-brand/35 hover:text-brand"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add another {slot.label.toLowerCase()}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="mt-3 min-w-0 rounded-xl border border-line bg-surface/65 p-3">
+          <button
+            type="button"
+            onClick={() => onOpenProduct(lines[0].product)}
+            className="line-clamp-2 min-w-0 break-words text-left text-[13px] font-semibold leading-snug text-ink hover:text-brand"
+          >
+            {lines[0].product.name}
+          </button>
+          <div className="mt-2 flex min-w-0 flex-wrap items-end justify-between gap-2">
+            <div className="min-w-0">
+              {(() => {
+                const basketItem = basketItems[0];
+                const retailer = basketItem?.retailer ?? lines[0].product.cheapest_retailer;
+                return (
+                  <>
+                    <div className="text-base font-extrabold tabular-nums text-ink">
+                      {formatBDT(basketItem?.lineTotal ?? lines[0].product.cheapest_price)}
+                    </div>
+                    <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-ink-4">
+                      {retailer && (
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ background: retailerColor(retailer) }}
+                        />
+                      )}
+                      <span className="truncate">{retailer ?? "Price unavailable"}</span>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            <button
+              type="button"
+              onClick={onChoose}
+              className="rounded-lg border border-line px-3 py-1.5 text-[11px] font-semibold text-ink-2 transition-colors hover:border-brand/40 hover:text-brand"
+            >
+              Change
+            </button>
+          </div>
+        </div>
+      )}
+    </article>
+  );
 }
 
 export function BuildStudio({
@@ -40,381 +294,576 @@ export function BuildStudio({
   onOpenProduct,
 }: Props) {
   const [pickerSlot, setPickerSlot] = useState<SlotId | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [activeTab, setActiveTab] = useState<DetailTab>("overview");
+  const [showPreview, setShowPreview] = useState(false);
+  const [shareState, setShareState] = useState<"idle" | "copied" | "failed">("idle");
+  const [confirmClear, setConfirmClear] = useState(false);
+  const summaryRef = useRef<HTMLElement>(null);
+  const previewRef = useRef<HTMLElement>(null);
 
   const compat = useMemo(() => evaluateBuild(build), [build]);
   const basket = useMemo(() => computeBasket(build), [build]);
-  const partCount = Object.values(build).filter((l) => l && l.length > 0).length;
+  const partCount = SLOTS.filter((slot) => slotLines(build, slot.id).length > 0).length;
+  const selectedLines = SLOTS.reduce((sum, slot) => sum + slotLines(build, slot.id).length, 0);
+  const nextSlot = SLOTS.find((slot) => slotLines(build, slot.id).length === 0) ?? null;
   const animatedTotal = useCountUp(basket.total, 600);
+  const errors = compat.issues.filter((issue) => issue.level === "error").length;
+  const warnings = compat.issues.filter((issue) => issue.level === "warn").length;
+  const successfulChecks = compat.issues.filter((issue) => issue.level === "ok").length;
+  const hasPowerParts = !!build.cpu?.length || !!build.gpu?.length;
+  const hasPsu = !!build.psu?.length;
+
+  const compatibilityLabel =
+    partCount < 2
+      ? "Checks start after 2 parts"
+      : errors > 0
+        ? `${errors} ${errors === 1 ? "conflict" : "conflicts"} found`
+        : warnings > 0
+          ? `No conflicts · ${warnings} to verify`
+          : successfulChecks > 0
+            ? "No conflicts found"
+            : "No matching checks yet";
+
+  const compatibilityTone =
+    errors > 0
+      ? "text-brand"
+      : warnings > 0
+        ? "text-warn"
+        : partCount < 2 || successfulChecks === 0
+          ? "text-ink-3"
+          : "text-ok";
+
+  const shareLabel =
+    shareState === "copied" ? "Link copied" : shareState === "failed" ? "Copy failed" : "Share build";
 
   const share = async () => {
     const url = onShare();
     try {
       await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
+      setShareState("copied");
     } catch {
-      /* clipboard blocked */
+      setShareState("failed");
     }
+    window.setTimeout(() => setShareState("idle"), 2200);
+  };
+
+  const clearBuild = () => {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      window.setTimeout(() => setConfirmClear(false), 3000);
+      return;
+    }
+    onClear();
+    setConfirmClear(false);
+    setActiveTab("overview");
   };
 
   const handlePick = (slotId: SlotId, product: ProductSummary) => {
-    if (isMulti(slotId)) {
-      onAddLine(slotId, product);
-    } else {
-      onSetPart(slotId, product);
+    if (isMulti(slotId)) onAddLine(slotId, product);
+    else onSetPart(slotId, product);
+  };
+
+  const chooseNext = () => {
+    if (nextSlot) {
+      setPickerSlot(nextSlot.id);
+      return;
+    }
+    setActiveTab("prices");
+    window.setTimeout(() => summaryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+
+  const openPreview = () => {
+    setShowPreview(true);
+    window.setTimeout(() => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+  };
+
+  const goToSummaryTab = (tab: DetailTab) => {
+    setActiveTab(tab);
+    if (window.matchMedia("(max-width: 1279px)").matches) {
+      window.setTimeout(() => summaryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
     }
   };
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(360px,460px)_minmax(420px,1fr)] 2xl:grid-cols-[minmax(380px,460px)_minmax(440px,1fr)_minmax(340px,400px)]">
-      {/* ── Left: slot list ── */}
-      <div className="glass flex flex-col gap-2 p-4">
-        <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-sm font-bold">Your Build</h2>
-          {partCount > 0 && (
-            <button
-              onClick={onClear}
-              className="flex items-center gap-1 text-xs text-ink-3 hover:text-brand"
-            >
-              <RotateCcw className="h-3 w-3" /> Clear
-            </button>
-          )}
-        </div>
+    <div className="min-w-0 space-y-5 pb-24 lg:pb-0">
+      <div className="sr-only" role="status" aria-live="polite">
+        {shareState === "copied" ? "Build link copied to clipboard" : shareState === "failed" ? "Build link could not be copied" : ""}
+      </div>
+      <header className="glass relative overflow-hidden p-5 sm:p-6">
+        <div className="pointer-events-none absolute -right-20 -top-32 h-72 w-72 rounded-full bg-brand-strong/10 blur-3xl" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand-strong/10 px-2.5 py-1 text-[11px] font-semibold text-brand">
+              <Sparkles className="h-3 w-3" /> Guided PC builder
+            </div>
+            <h1 className="text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">Build your PC with confidence</h1>
+            <p className="mt-2 text-sm leading-relaxed text-ink-3">
+              Pick any part in any order. We will check compatibility and find the best store plan as you go.
+            </p>
+          </div>
 
-        {SLOTS.map((s) => {
-          const lines = slotLines(build, s.id);
-          const err = compat.errorSlots.has(s.id);
-          const multi = isMulti(s.id);
-          const maxLines = (s as Record<string, unknown>).maxLines as number | undefined ?? 1;
-          const repProduct = lines[0]?.product;
-
-          return (
-            <div key={s.id} className="flex flex-col gap-1">
-              {/* Slot header row */}
+          <div className="flex flex-wrap items-center gap-2">
+            {partCount > 0 && (
               <button
-                onClick={() => setPickerSlot(s.id)}
-                className={`group flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all ${
-                  err
-                    ? "border-brand/50 bg-brand-strong/5"
-                    : lines.length > 0
-                      ? "border-line-2 bg-surface-2"
-                      : "border-dashed border-line bg-surface-2/40 hover:border-line-2"
-                }`}
+                type="button"
+                onClick={clearBuild}
+                onBlur={() => setConfirmClear(false)}
+                className={`btn-ghost !py-2 ${confirmClear ? "!border-brand/50 !text-brand" : ""}`}
               >
-                <span
-                  className="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
-                  style={{
-                    background: repProduct
-                      ? `${retailerColor(repProduct.cheapest_retailer ?? "")}22`
-                      : "#16161f",
-                    color: repProduct ? retailerColor(repProduct.cheapest_retailer ?? "") : "#5f5f6e",
-                  }}
-                >
-                  <CategoryIcon name={s.icon} className="h-4 w-4" />
-                </span>
-
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] uppercase tracking-wide text-ink-4">{s.label}</div>
-                  {lines.length === 0 ? (
-                    <div className="flex items-center gap-1 text-[13px] font-medium text-ink-3">
-                      <Plus className="h-3.5 w-3.5" /> Add {s.label.toLowerCase()}
-                    </div>
-                  ) : multi ? (
-                    <div className="text-[13px] font-medium text-ink">
-                      {lines.length} item{lines.length !== 1 ? "s" : ""}
-                      {lines.length < maxLines && (
-                        <span className="ml-1 text-[11px] text-ink-4">+ add more</span>
-                      )}
-                    </div>
-                  ) : (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenProduct(repProduct!);
-                      }}
-                      className="line-clamp-1 block text-[13px] font-medium text-ink hover:text-brand"
-                    >
-                      {repProduct!.name}
-                    </span>
-                  )}
-                </div>
-
-                {/* Single-slot price + remove */}
-                {!multi && lines.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold tabular-nums text-ink">
-                      {formatBDT(repProduct!.cheapest_price)}
-                    </span>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRemove(s.id);
-                      }}
-                      className="rounded p-1 text-ink-4 hover:text-brand"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </span>
-                  </div>
-                )}
-
-                {/* Multi-slot clear all */}
-                {multi && lines.length > 0 && (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRemove(s.id);
-                    }}
-                    className="rounded p-1 text-ink-4 hover:text-brand"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </span>
-                )}
+                <RotateCcw className="h-3.5 w-3.5" />
+                {confirmClear ? "Click again to clear" : "Clear"}
               </button>
+            )}
+            <button type="button" onClick={share} disabled={partCount === 0} className="btn-ghost !py-2">
+              {shareState === "copied" ? <Check className="h-3.5 w-3.5 text-ok" /> : <Share2 className="h-3.5 w-3.5" />}
+              {shareState === "copied" ? "Link copied" : shareState === "failed" ? "Copy failed" : "Share"}
+            </button>
+            <button type="button" onClick={chooseNext} className="btn-brand !py-2">
+              {nextSlot ? `Choose ${nextSlot.label}` : "Review prices"}
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
 
-              {/* Multi-slot line items */}
-              {multi && lines.map((line, idx) => (
-                <div
-                  key={idx}
-                  className="ml-12 flex items-center gap-2 rounded-lg border border-line bg-surface-2/60 px-3 py-2"
-                >
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full"
-                    style={{ background: retailerColor(line.product.cheapest_retailer ?? "") }}
-                  />
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => onOpenProduct(line.product)}
-                    className="min-w-0 flex-1 cursor-pointer truncate text-[12px] text-ink hover:text-brand"
-                  >
-                    {line.product.name}
-                  </span>
-                  {/* Qty stepper */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => onSetQty(s.id, idx, line.qty - 1)}
-                      disabled={line.qty <= 1}
-                      className="flex h-5 w-5 items-center justify-center rounded border border-line text-ink-3 hover:text-brand disabled:opacity-30"
-                    >
-                      <Minus className="h-2.5 w-2.5" />
-                    </button>
-                    <span className="w-4 text-center text-[12px] font-bold tabular-nums text-ink">
-                      {line.qty}
-                    </span>
-                    <button
-                      onClick={() => onSetQty(s.id, idx, line.qty + 1)}
-                      disabled={line.qty >= 8}
-                      className="flex h-5 w-5 items-center justify-center rounded border border-line text-ink-3 hover:text-brand disabled:opacity-30"
-                    >
-                      <Plus className="h-2.5 w-2.5" />
-                    </button>
-                  </div>
-                  <span className="shrink-0 text-[12px] font-bold tabular-nums text-ink">
-                    {line.product.cheapest_price != null
-                      ? formatBDT(line.product.cheapest_price * line.qty)
-                      : "—"}
-                  </span>
+        <div className="relative mt-5 grid gap-3 border-t border-line pt-4 lg:grid-cols-[minmax(280px,1fr)_auto_auto] lg:items-center">
+          <div className="min-w-0">
+            <div className="mb-2 flex items-center justify-between gap-3 text-[11px]">
+              <span className="font-semibold text-ink-2">{partCount} of {SLOTS.length} component types selected</span>
+              <span className="text-ink-4">{Math.round((partCount / SLOTS.length) * 100)}%</span>
+            </div>
+            <div className="grid grid-cols-8 gap-1.5" aria-label={`${partCount} of ${SLOTS.length} component types selected`}>
+              {SLOTS.map((slot) => {
+                const filled = slotLines(build, slot.id).length > 0;
+                return (
                   <button
-                    onClick={() => onRemoveLine(s.id, idx)}
-                    className="shrink-0 rounded p-0.5 text-ink-4 hover:text-brand"
+                    type="button"
+                    key={slot.id}
+                    onClick={() => setPickerSlot(slot.id)}
+                    className="group flex h-8 items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70"
+                    title={`${filled ? "Change" : "Choose"} ${slot.label}`}
+                    aria-label={`${filled ? "Change" : "Choose"} ${slot.label}`}
                   >
-                    <X className="h-3 w-3" />
+                    <span
+                      className={`h-1.5 w-full rounded-full transition-all group-hover:h-2.5 ${
+                        filled
+                          ? compat.errorSlots.has(slot.id)
+                            ? "bg-brand"
+                            : "bg-ok"
+                          : slot.id === nextSlot?.id
+                            ? "bg-line-2"
+                            : "bg-line"
+                      }`}
+                    />
                   </button>
-                </div>
-              ))}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ── Center: 3D rig ── */}
-      <div className="glass relative min-h-[440px] overflow-hidden p-0">
-        <div className="absolute left-4 top-4 z-10">
-          <div className="text-sm font-bold">Build Studio</div>
-          <div className="text-[11px] text-ink-4">Drag to rotate · scroll to zoom</div>
-        </div>
-        <Suspense
-          fallback={
-            <div className="grid h-full min-h-[440px] place-items-center text-sm text-ink-4">
-              Loading 3D rig…
-            </div>
-          }
-        >
-          <Rig3D build={build} errorSlots={compat.errorSlots} />
-        </Suspense>
-        {partCount === 0 && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-6 text-center text-xs text-ink-4">
-            Add parts on the left and watch your rig come together.
-          </div>
-        )}
-      </div>
-
-      {/* ── Right: gauge + report + basket ── */}
-      <div className="flex flex-col gap-4 xl:col-span-2 xl:grid xl:grid-cols-3 xl:items-start 2xl:sticky 2xl:top-24 2xl:col-span-1 2xl:flex 2xl:max-h-[calc(100dvh-7rem)] 2xl:overflow-y-auto 2xl:pr-1">
-        <div className="glass p-4">
-          <WattageGauge
-            estimatedWatts={compat.estimatedWatts}
-            recommendedPsu={compat.recommendedPsu}
-            psuWatts={compat.psuWatts}
-          />
-        </div>
-
-        <div className="glass p-4">
-          <CompatReport issues={compat.issues} partCount={partCount} />
-        </div>
-
-        <div className="glass p-4">
-          {/* ── Header: total + item count ── */}
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-[11px] uppercase tracking-wide text-ink-4">Build total</div>
-              <div className="text-3xl font-extrabold tabular-nums text-ink leading-tight">
-                {formatBDT(animatedTotal)}
-              </div>
-              <div className="mt-0.5 text-[11px] text-ink-4">
-                {basket.items.length} priced {basket.items.length === 1 ? "item" : "items"}
-                {basket.missingPrice.length > 0 && (
-                  <span className="ml-1.5 text-warn">· {basket.missingPrice.length} unavailable</span>
-                )}
-              </div>
+                );
+              })}
             </div>
           </div>
-
-          {/* ── Split-shop savings banner ── */}
-          {basket.savingsVsSingleStore > 0 && basket.singleStore ? (
-            <div className="mt-3 rounded-lg border border-ok/30 bg-ok/8 px-3 py-2.5">
-              <div className="text-[12px] font-semibold text-ok">
-                Split-shop saves you {formatBDT(basket.savingsVsSingleStore)}
-              </div>
-              <div className="mt-0.5 text-[11px] text-ink-4">
-                vs one-stop at{" "}
-                <span className="font-medium text-ink">{basket.singleStore.retailer}</span>
-                {" "}({formatBDT(basket.singleStore.total)})
-                <span className="ml-1 text-ink-5">— only shop with all items in stock</span>
-              </div>
-            </div>
-          ) : basket.singleStore ? (
-            <div className="mt-3 rounded-lg border border-line bg-surface-2/60 px-3 py-2 text-[11px] text-ink-4">
-              One-stop option:{" "}
-              <span className="font-medium text-ink">{basket.singleStore.retailer}</span>{" "}
-              ({formatBDT(basket.singleStore.total)})
-            </div>
-          ) : null}
-
-          {/* ── Per-store spending breakdown ── */}
-          {basket.perStore.length > 1 && (
-            <div className="mt-3 border-t border-line pt-3">
-              <div className="mb-1.5 text-[11px] uppercase tracking-wide text-ink-4">By store</div>
-              <div className="space-y-1">
-                {basket.perStore.map((s) => (
-                  <div key={s.retailer} className="flex items-center justify-between text-[12px]">
-                    <span className="flex items-center gap-1.5 text-ink-3">
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ background: retailerColor(s.retailer) }}
-                      />
-                      {s.retailer}
-                    </span>
-                    <span className="font-semibold tabular-nums text-ink">{formatBDT(s.total)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Purchase plan: per-item retailer + override ── */}
-          {basket.items.length > 0 && (
-            <div className="mt-3 border-t border-line pt-3">
-              <div className="mb-2 text-[11px] uppercase tracking-wide text-ink-4">Purchase plan</div>
-              <div className="space-y-2">
-                {basket.items.map((item) => (
-                  <div
-                    key={`${item.slotId}-${item.lineIndex}`}
-                    className="rounded-lg border border-line/60 bg-surface-2/50 px-3 py-2"
-                  >
-                    {/* Product name + total */}
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="line-clamp-2 flex-1 text-[12px] font-medium leading-snug text-ink">
-                        {item.product.name}
-                        {item.qty > 1 && (
-                          <span className="ml-1 font-bold text-brand"> ×{item.qty}</span>
-                        )}
-                      </span>
-                      <span className="shrink-0 text-[12px] font-bold tabular-nums text-ink">
-                        {formatBDT(item.lineTotal)}
-                      </span>
-                    </div>
-
-                    {/* Shop row: color dot + dropdown or plain label */}
-                    <div className="mt-1.5 flex items-center gap-1.5">
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ background: retailerColor(item.retailer) }}
-                      />
-                      {item.options.length > 1 ? (
-                        <select
-                          value={item.overridden ? item.retailer : "__cheapest__"}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            onSetLineRetailer(
-                              item.slotId,
-                              item.lineIndex,
-                              val === "__cheapest__" ? undefined : val,
-                            );
-                          }}
-                          className="flex-1 rounded border border-line/60 bg-surface px-1.5 py-0.5 text-[11px] text-ink-3 focus:border-brand/40 focus:outline-none"
-                        >
-                          {/* "Auto-cheapest" as the default unoverridden option */}
-                          <option value="__cheapest__">
-                            {item.options[0].retailer} — {formatBDT(item.options[0].price)} (cheapest)
-                          </option>
-                          {/* All other retailers */}
-                          {item.options.slice(1).map((o) => (
-                            <option key={o.retailer} value={o.retailer}>
-                              {o.retailer} — {formatBDT(o.price)}
-                            </option>
-                          ))}
-                          {/* If currently overridden to a non-cheapest, keep that option */}
-                          {item.overridden &&
-                            item.retailer !== item.options[0].retailer && (
-                              <option value={item.retailer}>
-                                {item.retailer} — {formatBDT(item.unitPrice)} (selected)
-                              </option>
-                            )}
-                        </select>
-                      ) : (
-                        <span className="text-[11px] text-ink-4">
-                          {item.retailer} — {formatBDT(item.unitPrice)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           <button
-            onClick={share}
-            disabled={partCount === 0}
-            className="btn-brand mt-4 w-full"
+            type="button"
+            onClick={() => goToSummaryTab("compatibility")}
+            className="flex min-w-0 items-center gap-2 rounded-xl border border-line bg-surface-2/65 px-3 py-2 text-left hover:border-line-2"
           >
-            {copied ? (
-              <>
-                <Check className="h-4 w-4" /> Link copied
-              </>
-            ) : (
-              <>
-                <Share2 className="h-4 w-4" /> Share build
-              </>
+            <ShieldCheck className={`h-4 w-4 shrink-0 ${compatibilityTone}`} />
+            <span className="min-w-0">
+              <span className="block text-[10px] uppercase tracking-wide text-ink-4">Compatibility</span>
+              <span className={`block truncate text-[11px] font-semibold ${compatibilityTone}`}>{compatibilityLabel}</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => goToSummaryTab("prices")}
+            className="flex items-center gap-2 rounded-xl border border-line bg-surface-2/65 px-3 py-2 text-left hover:border-line-2"
+          >
+            <ShoppingBag className="h-4 w-4 shrink-0 text-brand" />
+            <span>
+              <span className="block text-[10px] uppercase tracking-wide text-ink-4">Priced total</span>
+              <span className="block text-[13px] font-extrabold tabular-nums text-ink">{formatBDT(animatedTotal)}</span>
+              {basket.missingPrice.length > 0 && (
+                <span className="block text-[9px] text-warn">{basket.missingPrice.length} unavailable</span>
+              )}
+            </span>
+          </button>
+        </div>
+      </header>
+
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,410px)] xl:items-start">
+        <section className="glass min-w-0 p-4 sm:p-5">
+          <div className="mb-4 flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-ink">Choose your parts</h2>
+              <p className="mt-1 text-xs text-ink-4">Open any slot to compare matching products and prices.</p>
+            </div>
+            {nextSlot && (
+              <button
+                type="button"
+                onClick={() => setPickerSlot(nextSlot.id)}
+                className="inline-flex items-center gap-1.5 self-start text-xs font-semibold text-brand hover:text-ink sm:self-auto"
+              >
+                Next: {nextSlot.label} <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             )}
+          </div>
+
+          <div className="grid min-w-0 gap-3 md:grid-cols-2 md:items-start">
+            {[SLOTS.slice(0, 4), SLOTS.slice(4)].map((group, groupIndex) => (
+              <div key={groupIndex} className="min-w-0 space-y-3">
+                {group.map((slot) => {
+                  const index = SLOTS.findIndex((candidate) => candidate.id === slot.id);
+                  return (
+                    <BuildSlotCard
+                      key={slot.id}
+                      slot={slot}
+                      step={index + 1}
+                      lines={slotLines(build, slot.id)}
+                      basketItems={basket.items.filter((item) => item.slotId === slot.id)}
+                      hasError={compat.errorSlots.has(slot.id)}
+                      onChoose={() => setPickerSlot(slot.id)}
+                      onOpenProduct={onOpenProduct}
+                      onRemoveSlot={() => onRemove(slot.id)}
+                      onRemoveLine={(lineIndex) => onRemoveLine(slot.id, lineIndex)}
+                      onSetQty={(lineIndex, qty) => onSetQty(slot.id, lineIndex, qty)}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <aside ref={summaryRef} className="min-w-0 scroll-mt-24 xl:sticky xl:top-24">
+          <div className="glass min-w-0 overflow-hidden">
+            <div
+              className="grid grid-cols-3 gap-1 border-b border-line bg-surface-2/45 p-1.5"
+              role="tablist"
+              aria-label="Build details"
+            >
+              {([
+                ["overview", "Summary"],
+                ["compatibility", errors > 0 ? `Checks · ${errors}` : "Checks"],
+                ["prices", `Buy plan${selectedLines > 0 ? ` · ${selectedLines}` : ""}`],
+              ] as [DetailTab, string][]).map(([tab, label]) => (
+                <button
+                  type="button"
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  id={`build-tab-${tab}`}
+                  role="tab"
+                  aria-selected={activeTab === tab}
+                  aria-controls={`build-panel-${tab}`}
+                  className={`min-w-0 rounded-lg px-2 py-2 text-[11px] font-semibold transition-colors ${
+                    activeTab === tab ? "bg-elevated text-ink shadow-sm" : "text-ink-3 hover:text-ink"
+                  }`}
+                >
+                  <span className="block truncate">{label}</span>
+                </button>
+              ))}
+            </div>
+
+            {activeTab === "overview" && (
+              <div
+                className="p-5"
+                id="build-panel-overview"
+                role="tabpanel"
+                aria-labelledby="build-tab-overview"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-4">
+                      {basket.missingPrice.length > 0 ? "Priced total" : "Build total"}
+                    </div>
+                    <div className="mt-1 text-3xl font-extrabold leading-none tabular-nums text-ink">{formatBDT(animatedTotal)}</div>
+                    <div className="mt-2 text-[11px] text-ink-4">
+                      {basket.items.length} priced {basket.items.length === 1 ? "product" : "products"}
+                      {basket.missingPrice.length > 0 && <span className="ml-1 text-warn">· {basket.missingPrice.length} unavailable</span>}
+                    </div>
+                  </div>
+                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-brand/20 bg-brand-strong/10 text-brand">
+                    <ShoppingBag className="h-5 w-5" />
+                  </div>
+                </div>
+
+                {basket.savingsVsSingleStore > 0 && basket.singleStore && basket.missingPrice.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("prices")}
+                    className="mt-4 flex w-full items-center justify-between gap-3 rounded-xl border border-ok/25 bg-ok/[0.07] px-3.5 py-3 text-left"
+                  >
+                    <span>
+                      <span className="block text-[12px] font-semibold text-ok">Save {formatBDT(basket.savingsVsSingleStore)} by splitting stores</span>
+                      <span className="mt-0.5 block text-[10px] text-ink-4">See the purchase plan</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-ok" />
+                  </button>
+                )}
+
+                <div className="mt-4 divide-y divide-line rounded-xl border border-line bg-surface-2/45">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("compatibility")}
+                    className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-white/[0.02]"
+                  >
+                    <ShieldCheck className={`h-4 w-4 shrink-0 ${compatibilityTone}`} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[11px] font-semibold text-ink">Compatibility</span>
+                      <span className={`block truncate text-[10px] ${compatibilityTone}`}>{compatibilityLabel}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-ink-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("compatibility")}
+                    className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-white/[0.02]"
+                  >
+                    <Zap className="h-4 w-4 shrink-0 text-warn" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[11px] font-semibold text-ink">Estimated power</span>
+                      <span className="block truncate text-[10px] text-ink-4">
+                        {hasPowerParts ? `About ${compat.estimatedWatts}W · ${compat.recommendedPsu}W+ PSU recommended` : "Add a processor or graphics card to estimate"}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-ink-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("prices")}
+                    className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-white/[0.02]"
+                  >
+                    <PackageCheck className="h-4 w-4 shrink-0 text-info" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[11px] font-semibold text-ink">Where to buy</span>
+                      <span className="block truncate text-[10px] text-ink-4">
+                        {basket.items.length > 0 ? `${basket.perStore.length} ${basket.perStore.length === 1 ? "store" : "stores"} in the current plan` : "Store recommendations appear after you add a part"}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-ink-4" />
+                  </button>
+                </div>
+
+                <button type="button" onClick={chooseNext} className="btn-brand mt-4 w-full">
+                  {nextSlot ? `Choose ${nextSlot.label}` : "Review purchase plan"}
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={openPreview} className="btn-ghost !px-2.5 !py-2 text-xs">
+                    <Eye className="h-3.5 w-3.5" /> 3D preview
+                  </button>
+                  <button type="button" onClick={share} disabled={partCount === 0} className="btn-ghost !px-2.5 !py-2 text-xs">
+                    {shareState === "copied" ? <Check className="h-3.5 w-3.5 text-ok" /> : <Share2 className="h-3.5 w-3.5" />}
+                    {shareState === "copied" ? "Copied" : shareState === "failed" ? "Copy failed" : "Share build"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "compatibility" && (
+              <div
+                className="space-y-5 p-5"
+                id="build-panel-compatibility"
+                role="tabpanel"
+                aria-labelledby="build-tab-compatibility"
+              >
+                <div>
+                  <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink-4">
+                    <ShieldCheck className="h-4 w-4" /> Compatibility checks
+                  </div>
+                  <CompatReport issues={compat.issues} partCount={partCount} />
+                </div>
+                <div className="border-t border-line pt-5">
+                  <WattageGauge
+                    estimatedWatts={compat.estimatedWatts}
+                    recommendedPsu={compat.recommendedPsu}
+                    psuWatts={compat.psuWatts}
+                    hasPowerParts={hasPowerParts}
+                    hasPsu={hasPsu}
+                  />
+                </div>
+                {compat.errorSlots.size > 0 && (
+                  <p className="rounded-xl border border-brand/25 bg-brand-strong/[0.06] px-3 py-2.5 text-[11px] leading-relaxed text-ink-3">
+                    Slots with conflicts are highlighted in the parts list. Change either highlighted component to re-check the build.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {activeTab === "prices" && (
+              <div
+                className="p-5"
+                id="build-panel-prices"
+                role="tabpanel"
+                aria-labelledby="build-tab-prices"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-4">Purchase plan</div>
+                    <div className="mt-1 text-2xl font-extrabold tabular-nums text-ink">{formatBDT(animatedTotal)}</div>
+                  </div>
+                  <ShoppingBag className="h-5 w-5 text-brand" />
+                </div>
+
+                {selectedLines === 0 ? (
+                  <div className="mt-4 rounded-xl border border-dashed border-line px-4 py-8 text-center">
+                    <ShoppingBag className="mx-auto h-6 w-6 text-ink-4" />
+                    <p className="mt-2 text-xs font-semibold text-ink-2">Your store plan is empty</p>
+                    <p className="mt-1 text-[11px] text-ink-4">Add a part and we will choose its lowest in-stock price.</p>
+                    <button type="button" onClick={chooseNext} className="btn-brand mt-4 !py-2">Choose first part</button>
+                  </div>
+                ) : basket.items.length === 0 ? (
+                  <div className="mt-4 rounded-xl border border-warn/25 bg-warn/[0.06] px-4 py-6 text-center">
+                    <AlertTriangle className="mx-auto h-6 w-6 text-warn" />
+                    <p className="mt-2 text-xs font-semibold text-ink-2">No current in-stock prices</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-ink-4">
+                      {basket.missingPrice.length} selected {basket.missingPrice.length === 1 ? "product is" : "products are"} currently unavailable, so the priced total is {formatBDT(0)}.
+                    </p>
+                    {basket.missingPrice[0] && (
+                      <button
+                        type="button"
+                        onClick={() => setPickerSlot(basket.missingPrice[0].slotId)}
+                        className="btn-brand mt-4 !py-2"
+                      >
+                        Change {slotDef(basket.missingPrice[0].slotId).label}
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {basket.missingPrice.length > 0 && (
+                      <div className="mt-4 flex gap-2 rounded-xl border border-warn/25 bg-warn/[0.07] px-3 py-2.5 text-[11px] text-warn">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        {basket.missingPrice.length} selected {basket.missingPrice.length === 1 ? "product has" : "products have"} no in-stock price and is not included in the total.
+                      </div>
+                    )}
+
+                    {basket.savingsVsSingleStore > 0 && basket.singleStore && basket.missingPrice.length === 0 ? (
+                      <div className="mt-4 rounded-xl border border-ok/25 bg-ok/[0.07] px-3.5 py-3">
+                        <div className="text-[12px] font-semibold text-ok">Split shopping saves {formatBDT(basket.savingsVsSingleStore)}</div>
+                        <div className="mt-0.5 text-[10px] text-ink-4">
+                          Compared with buying everything at {basket.singleStore.retailer} for {formatBDT(basket.singleStore.total)}.
+                        </div>
+                      </div>
+                    ) : basket.singleStore && basket.missingPrice.length === 0 ? (
+                      <div className="mt-4 rounded-xl border border-line bg-surface-2/55 px-3.5 py-2.5 text-[11px] text-ink-3">
+                        One-store option: <span className="font-semibold text-ink">{basket.singleStore.retailer}</span> · {formatBDT(basket.singleStore.total)}
+                      </div>
+                    ) : null}
+
+                    {basket.perStore.length > 0 && (
+                      <div className="mt-5">
+                        <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-ink-4">Spend by store</div>
+                        <div className="space-y-1.5">
+                          {basket.perStore.map((store) => (
+                            <div key={store.retailer} className="flex items-center justify-between gap-3 text-[11px]">
+                              <span className="flex min-w-0 items-center gap-1.5 text-ink-3">
+                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: retailerColor(store.retailer) }} />
+                                <span className="truncate">{store.retailer}</span>
+                              </span>
+                              <span className="shrink-0 font-semibold tabular-nums text-ink">{formatBDT(store.total)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-5 border-t border-line pt-4">
+                      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-ink-4">Products and retailers</div>
+                      <div className="space-y-2">
+                        {basket.items.map((item) => {
+                          const cheapest = item.options[0];
+                          const selectedRetailer = item.overridden && item.retailer !== cheapest?.retailer ? item.retailer : "__cheapest__";
+                          return (
+                            <div key={`${item.slotId}-${item.lineIndex}`} className="min-w-0 rounded-xl border border-line bg-surface-2/50 p-3">
+                              <div className="flex min-w-0 items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-[9px] font-semibold uppercase tracking-wide text-ink-4">{slotDef(item.slotId).label}</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenProduct(item.product)}
+                                    className="mt-0.5 line-clamp-2 break-words text-left text-[11px] font-semibold leading-snug text-ink hover:text-brand"
+                                  >
+                                    {item.product.name}{item.qty > 1 && <span className="ml-1 text-brand">×{item.qty}</span>}
+                                  </button>
+                                </div>
+                                <span className="shrink-0 text-[12px] font-bold tabular-nums text-ink">{formatBDT(item.lineTotal)}</span>
+                              </div>
+
+                              <div className="mt-2 flex min-w-0 items-center gap-1.5">
+                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: retailerColor(item.retailer) }} />
+                                {item.options.length > 1 ? (
+                                  <select
+                                    value={selectedRetailer}
+                                    onChange={(event) => {
+                                      const value = event.target.value;
+                                      onSetLineRetailer(item.slotId, item.lineIndex, value === "__cheapest__" ? undefined : value);
+                                    }}
+                                    className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-[10px] text-ink-2 outline-none focus:border-brand/45"
+                                    aria-label={`Retailer for ${item.product.name}`}
+                                  >
+                                    <option value="__cheapest__">{cheapest.retailer} · {formatBDT(cheapest.price)} (lowest)</option>
+                                    {item.options.slice(1).map((option) => (
+                                      <option key={option.retailer} value={option.retailer}>{option.retailer} · {formatBDT(option.price)}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span className="min-w-0 truncate text-[10px] text-ink-4">{item.retailer} · {formatBDT(item.unitPrice)}</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <button type="button" onClick={share} className="btn-ghost mt-4 w-full">
+                      {shareState === "copied" ? <Check className="h-4 w-4 text-ok" /> : <Share2 className="h-4 w-4" />}
+                      {shareState === "idle" ? "Share this build" : shareLabel}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      {showPreview && (
+        <section ref={previewRef} className="glass scroll-mt-24 overflow-hidden">
+          <div className="flex items-center justify-between gap-4 border-b border-line px-4 py-3.5 sm:px-5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-bold text-ink"><Eye className="h-4 w-4 text-brand" /> 3D build preview</div>
+              <div className="mt-0.5 text-[10px] text-ink-4">Drag to rotate · scroll to zoom</div>
+            </div>
+            <button type="button" onClick={() => setShowPreview(false)} className="btn-ghost !p-2" aria-label="Close 3D preview">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="relative h-[320px] sm:h-[420px]">
+            <Suspense fallback={<div className="grid h-full place-items-center text-sm text-ink-4">Loading 3D preview…</div>}>
+              <Rig3D build={build} errorSlots={compat.errorSlots} />
+            </Suspense>
+            {partCount === 0 && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-5 text-center text-xs text-ink-4">Add parts and watch your rig come together.</div>
+            )}
+          </div>
+        </section>
+      )}
+
+      <div className="fixed inset-x-3 bottom-3 z-30 lg:hidden">
+        <div className="mx-auto flex max-w-xl items-center gap-3 rounded-2xl border border-line-2 bg-surface/95 p-2.5 shadow-2xl backdrop-blur-xl">
+          <div className="min-w-0 flex-1 pl-1">
+            <div className="truncate text-base font-extrabold tabular-nums text-ink">{formatBDT(animatedTotal)}</div>
+            <div className="text-[10px] text-ink-4">
+              {partCount}/{SLOTS.length} component types
+              {basket.missingPrice.length > 0 && <span className="text-warn"> · {basket.missingPrice.length} unavailable</span>}
+            </div>
+          </div>
+          <button type="button" onClick={chooseNext} className="btn-brand !px-3.5 !py-2.5">
+            {nextSlot ? `Choose ${nextSlot.label}` : "Review prices"}
+            <ChevronRight className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -424,7 +873,7 @@ export function BuildStudio({
         onClose={() => setPickerSlot(null)}
         onPick={handlePick}
         chosenLines={pickerSlot ? slotLines(build, pickerSlot) : []}
-        onRemoveLine={pickerSlot ? (idx) => onRemoveLine(pickerSlot, idx) : undefined}
+        onRemoveLine={pickerSlot ? (index) => onRemoveLine(pickerSlot, index) : undefined}
       />
     </div>
   );

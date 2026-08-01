@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { RotateCcw, SlidersHorizontal } from "lucide-react";
+import { RotateCcw, SlidersHorizontal, X } from "lucide-react";
 import { api } from "../api";
 import { SORT_OPTIONS, type CategoryDef, type SelectFilter } from "../config";
 import type { Filters } from "../types";
@@ -10,6 +10,7 @@ interface Props {
   onChange: (patch: Partial<Filters>) => void;
   onReset: () => void;
   resultCount: number;
+  onClose?: () => void;
 }
 
 interface FilterToggleProps {
@@ -141,6 +142,7 @@ export function FilterSidebar({
   onChange,
   onReset,
   resultCount,
+  onClose,
 }: Props) {
   const [brands, setBrands] = useState<string[]>([]);
 
@@ -167,13 +169,25 @@ export function FilterSidebar({
           <SlidersHorizontal className="h-4 w-4 text-brand" />
           Filters
         </div>
-        <button
-          onClick={onReset}
-          className="flex items-center gap-1 text-xs font-medium text-ink-3 transition-colors hover:text-brand"
-        >
-          <RotateCcw className="h-3 w-3" />
-          Reset
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onReset}
+            className="flex items-center gap-1 px-1 text-xs font-medium text-ink-3 transition-colors hover:text-brand"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Reset
+          </button>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface-2 text-ink-3 hover:text-ink"
+              aria-label="Close filters"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sort */}

@@ -1,75 +1,92 @@
+import { Gauge, Zap } from "lucide-react";
 import { useCountUp } from "../../lib/useCountUp";
 
 interface Props {
   estimatedWatts: number;
   recommendedPsu: number;
   psuWatts: number | null;
+  hasPowerParts?: boolean;
+  hasPsu?: boolean;
 }
 
 /**
- * Radial gauge showing estimated system draw against the PSU's capacity
- * (or the recommended size when no PSU is picked yet).
+ * Compact power status. Power is supporting information in the builder, so a
+ * horizontal meter communicates the useful numbers without dominating the
+ * purchase workflow.
  */
-export function WattageGauge({ estimatedWatts, recommendedPsu, psuWatts }: Props) {
-  const animated = useCountUp(estimatedWatts, 700) ?? 0;
-  const capacity = psuWatts ?? recommendedPsu;
-  const frac = capacity > 0 ? Math.min(1, estimatedWatts / capacity) : 0;
+export function WattageGauge({
+  estimatedWatts,
+  recommendedPsu,
+  psuWatts,
+  hasPowerParts = true,
+  hasPsu = false,
+}: Props) {
+  const animated = useCountUp(hasPowerParts ? estimatedWatts : 0, 700) ?? 0;
 
-  const color = frac < 0.7 ? "#2dd4a7" : frac < 0.9 ? "#f5b14c" : "#f43f4b";
-
-  // Geometry — a 270° arc gauge.
-  const R = 52;
-  const C = 2 * Math.PI * R;
-  const arc = 0.75; // fraction of circle used (270°)
-  const dash = C * arc;
-  const offset = dash * (1 - frac);
-
-  return (
-    <div className="flex flex-col items-center">
-      <div className="relative h-36 w-36">
-        <svg viewBox="0 0 140 140" className="h-full w-full -rotate-[135deg]">
-          <circle
-            cx="70"
-            cy="70"
-            r={R}
-            fill="none"
-            stroke="#26262f"
-            strokeWidth="12"
-            strokeLinecap="round"
-            strokeDasharray={`${dash} ${C}`}
-          />
-          <circle
-            cx="70"
-            cy="70"
-            r={R}
-            fill="none"
-            stroke={color}
-            strokeWidth="12"
-            strokeLinecap="round"
-            strokeDasharray={`${dash} ${C}`}
-            strokeDashoffset={offset}
-            style={{ transition: "stroke-dashoffset 0.7s cubic-bezier(0.22,1,0.36,1), stroke 0.3s" }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className="text-2xl font-extrabold tabular-nums text-ink">
-            {Math.round(animated)}
-            <span className="text-sm font-bold text-ink-3">W</span>
-          </div>
-          <div className="text-[10px] uppercase tracking-wider text-ink-4">est. draw</div>
+  if (!hasPowerParts) {
+    return (
+      <div className="flex gap-3 rounded-xl border border-dashed border-line px-3.5 py-4">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-ink-4">
+          <Zap className="h-4 w-4" />
+        </div>
+        <div>
+          <div className="text-[12px] font-semibold text-ink-2">Power estimate not ready</div>
+          <p className="mt-1 text-[11px] leading-relaxed text-ink-4">
+            Add a processor or graphics card and we will estimate your system draw and PSU headroom.
+          </p>
         </div>
       </div>
-      <div className="mt-1 text-center text-xs text-ink-3">
-        {psuWatts != null ? (
-          <>
-            PSU <span className="font-semibold text-ink">{psuWatts}W</span> ·{" "}
-            {Math.round(frac * 100)}% load
-          </>
+    );
+  }
+
+  const capacity = psuWatts ?? recommendedPsu;
+  const rawFraction = capacity > 0 ? estimatedWatts / capacity : 0;
+  const barFraction = Math.min(1, rawFraction);
+  const percentage = Math.round(rawFraction * 100);
+  const colorClass = rawFraction < 0.7 ? "bg-ok" : rawFraction < 0.9 ? "bg-warn" : "bg-brand";
+  const textClass = rawFraction < 0.7 ? "text-ok" : rawFraction < 0.9 ? "text-warn" : "text-brand";
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Gauge className={`h-4 w-4 ${textClass}`} />
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-4">Estimated power</div>
+            <div className="mt-0.5 text-lg font-extrabold tabular-nums text-ink">
+              {Math.round(animated)}W
+            </div>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-wide text-ink-4">
+            {hasPsu ? "Selected PSU" : "Recommended PSU"}
+          </div>
+          <div className="mt-0.5 text-sm font-bold tabular-nums text-ink">
+            {psuWatts != null ? `${psuWatts}W` : hasPsu ? "Unknown" : `${recommendedPsu}W+`}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-line">
+        <div
+          className={`h-full rounded-full transition-[width] duration-700 ${colorClass}`}
+          style={{ width: `${Math.max(3, barFraction * 100)}%` }}
+        />
+      </div>
+
+      <div className="mt-2 flex items-start justify-between gap-3 text-[10px] text-ink-4">
+        <span>
+          {psuWatts != null
+            ? `${percentage}% estimated load`
+            : `Includes 40% recommended headroom`}
+        </span>
+        {hasPsu && psuWatts == null ? (
+          <span className="text-right text-warn">PSU wattage unavailable</span>
+        ) : psuWatts != null && psuWatts < recommendedPsu ? (
+          <span className="text-right text-warn">Consider {recommendedPsu}W+</span>
         ) : (
-          <>
-            Recommended PSU{" "}
-            <span className="font-semibold text-ink">{recommendedPsu}W+</span>
-          </>
+          <span className={`text-right ${textClass}`}>{psuWatts != null ? "Capacity checked" : "Sizing guide"}</span>
         )}
       </div>
     </div>

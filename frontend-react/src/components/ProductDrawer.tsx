@@ -32,6 +32,7 @@ interface Props {
   isWatched?: boolean;
   onToggleWatch?: (p: ProductSummary) => void;
   isAdmin?: boolean;
+  layer?: "default" | "picker";
 }
 
 export function ProductDrawer({
@@ -42,6 +43,7 @@ export function ProductDrawer({
   isWatched,
   onToggleWatch,
   isAdmin = false,
+  layer = "default",
 }: Props) {
   const [history, setHistory] = useState<ProductHistory | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -49,17 +51,32 @@ export function ProductDrawer({
 
   useEffect(() => {
     if (!product) return;
+    let alive = true;
     setHistory(null);
     setSellerSpecs(null);
     setLoadingHistory(true);
     api
       .history(product.id)
-      .then(setHistory)
-      .catch(() => setHistory(null))
-      .finally(() => setLoadingHistory(false));
+      .then((nextHistory) => {
+        if (alive) setHistory(nextHistory);
+      })
+      .catch(() => {
+        if (alive) setHistory(null);
+      })
+      .finally(() => {
+        if (alive) setLoadingHistory(false);
+      });
     if (isAdmin) {
-      api.sellerSpecs(product.id).then(setSellerSpecs).catch(() => null);
+      api
+        .sellerSpecs(product.id)
+        .then((nextSpecs) => {
+          if (alive) setSellerSpecs(nextSpecs);
+        })
+        .catch(() => null);
     }
+    return () => {
+      alive = false;
+    };
   }, [product, isAdmin]);
 
   // Close on Escape
@@ -92,14 +109,17 @@ export function ProductDrawer({
       {product && (
         <>
           <motion.div
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+            className={`fixed inset-0 bg-black/60 backdrop-blur-sm ${layer === "picker" ? "z-[70]" : "z-40"}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
           <motion.div
-            className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col border-l border-line bg-surface shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label={product.name}
+            className={`fixed inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-line bg-surface shadow-2xl ${layer === "picker" ? "z-[80]" : "z-50"}`}
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}

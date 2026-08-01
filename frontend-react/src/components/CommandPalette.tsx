@@ -75,7 +75,7 @@ export function CommandPalette({ open, onClose, onSelect }: Props) {
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-[12vh]"
+          className="fixed inset-0 z-[100] flex items-start justify-center px-4 pt-[12vh]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

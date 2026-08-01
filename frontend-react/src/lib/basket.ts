@@ -1,5 +1,5 @@
 import type { Listing, ProductSummary } from "../types";
-import type { BuildState, SlotId } from "./buildConfig";
+import { SLOTS, type BuildState, type SlotId } from "./buildConfig";
 
 export interface BasketItem {
   slotId: SlotId;
@@ -45,7 +45,10 @@ export function computeBasket(build: BuildState): Basket {
   const missingPrice: Basket["missingPrice"] = [];
   const perStoreMap = new Map<string, number>();
 
-  for (const [slotId, lines] of Object.entries(build) as [SlotId, NonNullable<BuildState[SlotId]>][]) {
+  // Keep the purchase plan in the same predictable order as the builder,
+  // regardless of the order in which a visitor picked their components.
+  for (const { id: slotId } of SLOTS) {
+    const lines = build[slotId] ?? [];
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const listing = pickListing(line.product, line.retailer);
