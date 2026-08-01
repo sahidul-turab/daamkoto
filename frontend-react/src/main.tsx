@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App";
+import { SNAPSHOT_BASE } from "./lib/bootstrap";
 
 /**
  * Open the connection to the API before React needs it.
@@ -13,8 +14,7 @@ import App from "./App";
  *
  * No-ops in dev, where /api is proxied through the page's own origin.
  */
-function preconnectApi(): void {
-  const base = import.meta.env.VITE_API_BASE as string | undefined;
+function addPreconnect(base: string | undefined): void {
   if (!base) return;
   try {
     const origin = new URL(base, window.location.origin).origin;
@@ -33,7 +33,8 @@ function preconnectApi(): void {
   }
 }
 
-preconnectApi();
+addPreconnect(import.meta.env.VITE_API_BASE as string | undefined);
+addPreconnect(SNAPSHOT_BASE);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

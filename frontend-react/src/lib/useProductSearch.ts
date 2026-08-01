@@ -3,6 +3,7 @@ import { api, buildUrl } from "../api";
 import { peek } from "./swr";
 import { PAGE_SIZE } from "../config";
 import type { Filters, ProductSummary } from "../types";
+import { fetchBootstrapProducts } from "./bootstrap";
 
 /**
  * Debounce only exists to stop a request firing on every keystroke in the search
@@ -92,9 +93,28 @@ export function useProductSearch(
     prevSearch.current = filters.search;
 
     const fire = () => {
+      let liveDelivered = false;
+      let bootstrapDelivered = false;
+
+      // Start the edge snapshot and the live request together. The first one
+      // that returns paints the grid; the live API always wins when it becomes
+      // available, so the snapshot is a fast-start path rather than a second
+      // source of truth.
+      const bootstrap = hit
+        ? Promise.resolve(null)
+        : fetchBootstrapProducts(params).then((res) => {
+            if (!res || id !== reqId.current || liveDelivered) return res;
+            bootstrapDelivered = true;
+            setProducts(res.products);
+            setTotal(res.total);
+            setLoading(false);
+            return res;
+          });
+
       api
         .products(params, (res, isStale) => {
           if (id !== reqId.current) return;
+          liveDelivered = true;
           setProducts(res.products);
           setTotal(res.total);
           if (!isStale) setLoading(false);
@@ -106,15 +126,17 @@ export function useProductSearch(
         })
         .catch(() => {
           if (id !== reqId.current) return;
-          // Keep whatever is on screen if we had a cached copy; a failed
-          // revalidation should not blank out a working page.
-          if (!hit) {
+          // The edge snapshot may still be in flight. Final empty/error state
+          // is decided only after both sources have settled.
+        })
+        .finally(async () => {
+          await bootstrap;
+          if (id !== reqId.current) return;
+          if (!hit && !liveDelivered && !bootstrapDelivered) {
             setProducts([]);
             setTotal(0);
           }
-        })
-        .finally(() => {
-          if (id === reqId.current) setLoading(false);
+          setLoading(false);
         });
     };
 

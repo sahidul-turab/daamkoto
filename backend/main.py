@@ -157,7 +157,9 @@ def _run_pipeline_bg(run_id: int, category: str, retailers: list[str]) -> None:
 _WARM_CATEGORIES = [
     "RAM DESKTOP", "RAM LAPTOP", "GPU", "PROCESSOR", "MOTHERBOARD",
     "SSD", "PORTABLE SSD", "HDD", "PORTABLE HDD", "PSU",
-    "CPU COOLER", "CASING COOLER", "CASING",
+    "CPU COOLER", "CASING COOLER", "CASING", "MONITOR", "KEYBOARD",
+    "MOUSE", "HEADSET", "UPS", "SPEAKER", "WEBCAM", "GAMING CHAIR",
+    "PRINTER", "MOUSE PAD", "GAMEPAD",
 ]
 
 # These must mirror frontend-react/src/config.ts (PAGE_SIZE) and
@@ -208,17 +210,8 @@ def _warm_caches() -> None:
         _log.warning("Cache warmup skipped: %s", exc)
 
 
-# ---------------------------------------------------------------------------
-# App lifecycle — init / close connection pool
-# ---------------------------------------------------------------------------
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # min_conn=3: opening a connection to a managed Postgres (Neon, Singapore)
-    # costs a TLS handshake worth ~100ms+. Keeping a few open means the first
-    # requests after boot never pay it.
-    database.init_pool(min_conn=3, max_conn=10)
-    # Fix any RUNNING rows left behind by a previous server crash
+def _run_startup_tasks() -> None:
+    """Best-effort database housekeeping and cache fill after HTTP is ready."""
     try:
         with database.get_db() as conn:
             stale = queries.cleanup_stale_runs(conn)
@@ -227,9 +220,23 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass  # scraper_runs table may not exist yet — migration not applied
 
-    # Fill the response cache in the background so the first real visitor gets
-    # a cache hit instead of a cold aggregation.
-    threading.Thread(target=_warm_caches, daemon=True).start()
+    _warm_caches()
+
+
+# ---------------------------------------------------------------------------
+# App lifecycle — init / close connection pool
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Open only the connection needed to become ready. On a cold managed
+    # Postgres, eagerly opening three TLS connections and running housekeeping
+    # before `yield` delayed HTTP readiness. The pool grows on demand to ten.
+    database.init_pool(min_conn=1, max_conn=10)
+
+    # Housekeeping and all 24 category warmups are useful but must never sit in
+    # front of the first HTTP response. Edge snapshots cover Browse meanwhile.
+    threading.Thread(target=_run_startup_tasks, daemon=True).start()
 
     yield
     database.close_pool()

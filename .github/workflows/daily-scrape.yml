@@ -18,6 +18,7 @@
 #
 # Secrets required (Settings -> Secrets and variables -> Actions):
 #   DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD   (from the Neon pooled URL)
+#   R2_ENDPOINT R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET
 
 name: Daily scrape
 
@@ -121,13 +122,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install psycopg2-binary python-dotenv
+      - run: pip install psycopg2-binary python-dotenv boto3
 
       - name: Freshness report
         run: |
@@ -136,6 +142,10 @@ jobs:
             ARGS="--retailers ${{ github.event.inputs.retailers }}"
           fi
           python scripts/freshness_report.py $ARGS
+
+      - name: Publish fast-start product snapshots
+        if: ${{ env.R2_ACCESS_KEY_ID != '' }}
+        run: python scripts/export_bootstrap_snapshots.py --upload
 
       - name: Heartbeat
         # GitHub disables scheduled workflows on public repos after 60 days with
