@@ -41,7 +41,7 @@ function useLatch(active: boolean): boolean {
 /** Placeholder while a lazily-loaded view's chunk arrives. */
 function ViewLoading() {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="product-grid gap-4">
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} className="skeleton h-40 rounded-2xl" />
       ))}
@@ -158,7 +158,7 @@ export default function App() {
         onOpenWatchlist={() => setWatchlistOpen(true)}
       />
 
-      <main className="mx-auto max-w-[1320px] px-4 py-6 md:px-6">
+      <main className="app-shell py-6">
         {view === "scraper" ? (
           <Suspense fallback={<ViewLoading />}>
             <ScraperDashboard />
@@ -201,7 +201,7 @@ export default function App() {
               </button>
             </div>
 
-            <div className="mt-4 grid gap-6 lg:grid-cols-[280px_1fr]">
+            <div className="browse-layout mt-4">
               <div
                 className={`${mobileFiltersOpen ? "block" : "hidden"} lg:sticky lg:top-24 lg:block lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:pr-1`}
               >
@@ -315,7 +315,7 @@ export default function App() {
       </Suspense>
       )}
 
-      <footer className="mx-auto max-w-[1320px] px-6 py-10 text-center text-xs text-ink-4">
+      <footer className="app-shell py-10 text-center text-xs text-ink-4">
         DaamKoto · Prices in BDT, updated on every scrape · Bangladesh
       </footer>
     </div>

@@ -55,7 +55,7 @@ export function DealsView({ onOpenProduct }: Props) {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="w-full space-y-6">
       {/* Hero */}
       <div className="rounded-2xl border border-line bg-surface-2 px-6 py-6">
         <div className="flex items-center gap-3">
@@ -120,7 +120,7 @@ export function DealsView({ onOpenProduct }: Props) {
       )}
 
       {!loading && deals.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="deal-grid gap-3">
           {deals.map((deal, i) => (
             <button
               key={i}

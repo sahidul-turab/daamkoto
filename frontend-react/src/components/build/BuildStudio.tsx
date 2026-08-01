@@ -67,7 +67,7 @@ export function BuildStudio({
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[460px_1fr_400px]">
+    <div className="grid gap-4 xl:grid-cols-[minmax(360px,460px)_minmax(420px,1fr)] 2xl:grid-cols-[minmax(380px,460px)_minmax(440px,1fr)_minmax(340px,400px)]">
       {/* ── Left: slot list ── */}
       <div className="glass flex flex-col gap-2 p-4">
         <div className="mb-1 flex items-center justify-between">
@@ -257,7 +257,7 @@ export function BuildStudio({
       </div>
 
       {/* ── Right: gauge + report + basket ── */}
-      <div className="flex flex-col gap-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
+      <div className="flex flex-col gap-4 xl:col-span-2 xl:grid xl:grid-cols-3 xl:items-start 2xl:sticky 2xl:top-24 2xl:col-span-1 2xl:flex 2xl:max-h-[calc(100dvh-7rem)] 2xl:overflow-y-auto 2xl:pr-1">
         <div className="glass p-4">
           <WattageGauge
             estimatedWatts={compat.estimatedWatts}

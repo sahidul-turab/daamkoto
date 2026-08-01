@@ -120,6 +120,38 @@ body::after {
 }
 
 @layer components {
+  /* Shared page shell: nearly edge-to-edge on normal displays, while retaining
+     a sensible cap on ultrawide monitors and comfortable responsive gutters. */
+  .app-shell {
+    width: 100%;
+    max-width: 2200px;
+    margin-inline: auto;
+    padding-inline: clamp(1rem, 2vw, 2.5rem);
+  }
+
+  /* Product columns are determined by usable space, not the screen breakpoint.
+     This gives a laptop 2–3 readable cards and a wide desktop 5–6. */
+  .product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr));
+  }
+
+  .deal-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  }
+
+  .browse-layout {
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  @media (min-width: 64rem) {
+    .browse-layout {
+      grid-template-columns: clamp(260px, 18vw, 320px) minmax(0, 1fr);
+    }
+  }
+
   /* A card that lifts and lights its border on hover */
   .card-interactive {
     @apply glass relative overflow-hidden transition-all duration-300 ease-out;

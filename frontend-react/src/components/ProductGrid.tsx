@@ -28,7 +28,7 @@ function SkeletonCard() {
 export function ProductGrid({ products, loading, onOpen, onAddToBuild, showAddToBuild = false }: Props) {
   if (loading) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="product-grid gap-4">
         {Array.from({ length: 9 }).map((_, i) => (
           <SkeletonCard key={i} />
         ))}
@@ -52,7 +52,7 @@ export function ProductGrid({ products, loading, onOpen, onAddToBuild, showAddTo
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="product-grid gap-4">
       {products.map((p, i) => (
         <ProductCard key={p.id} product={p} index={i} onOpen={onOpen} onAddToBuild={onAddToBuild} showAddToBuild={showAddToBuild} />
       ))}

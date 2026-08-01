@@ -29,9 +29,9 @@ export function Header({
 }: Props) {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/70 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-[1320px] flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:gap-6 md:px-6">
+      <div className="app-shell flex flex-wrap items-center gap-3 py-3 lg:flex-nowrap lg:gap-4">
         {/* Logo */}
-        <div className="flex items-center gap-3">
+        <div className="order-1 flex shrink-0 items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-strong text-white shadow-[0_8px_24px_-8px_rgba(227,30,36,0.9)]">
             <span className="text-lg font-black">৳</span>
           </div>
@@ -46,7 +46,7 @@ export function Header({
         </div>
 
         {/* View switch */}
-        <div className="flex shrink-0 rounded-xl border border-line bg-surface-2 p-1 text-sm font-semibold">
+        <div className="no-scrollbar order-4 flex w-full shrink-0 overflow-x-auto rounded-xl border border-line bg-surface-2 p-1 text-sm font-semibold lg:order-2 lg:w-auto">
           <button
             onClick={() => onViewChange("browse")}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors ${
@@ -89,7 +89,7 @@ export function Header({
         </div>
 
         {/* Search */}
-        <div className="relative flex-1">
+        <div className="relative order-5 w-full lg:order-3 lg:flex-1">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-4" />
           <input
             value={search}
@@ -119,7 +119,7 @@ export function Header({
         {/* Watchlist */}
         <button
           onClick={onOpenWatchlist}
-          className="btn-ghost relative shrink-0 !rounded-xl"
+          className="btn-ghost order-2 ml-auto shrink-0 !rounded-xl lg:order-4 lg:ml-0"
           title="Watchlist"
         >
           <Bookmark className="h-4 w-4" />
@@ -131,9 +131,9 @@ export function Header({
         </button>
 
         {/* AI button */}
-        <button onClick={onOpenChat} className="btn-brand shrink-0">
+        <button onClick={onOpenChat} className="btn-brand order-3 shrink-0 lg:order-5" aria-label="Ask AI">
           <Sparkles className="h-4 w-4" />
-          Ask AI
+          <span className="hidden sm:inline">Ask AI</span>
         </button>
       </div>
     </header>

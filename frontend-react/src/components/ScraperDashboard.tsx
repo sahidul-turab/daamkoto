@@ -214,7 +214,7 @@ export function ScraperDashboard() {
       {/* ── Retailer freshness grid ── */}
       <section>
         <p className="label mb-3">Retailer Freshness</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">
           {(data?.freshness ?? []).map((row) => {
             const color = freshnessColor(row.last_scraped);
             return (
