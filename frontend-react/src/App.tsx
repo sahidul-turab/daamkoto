@@ -203,7 +203,7 @@ export default function App() {
 
             <div className="mt-4 grid gap-6 lg:grid-cols-[280px_1fr]">
               <div
-                className={`${mobileFiltersOpen ? "block" : "hidden"} lg:block lg:sticky lg:top-24 lg:self-start`}
+                className={`${mobileFiltersOpen ? "block" : "hidden"} lg:sticky lg:top-24 lg:block lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:pr-1`}
               >
                 <FilterSidebar
                   category={category}

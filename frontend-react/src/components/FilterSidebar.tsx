@@ -12,6 +12,37 @@ interface Props {
   resultCount: number;
 }
 
+interface FilterToggleProps {
+  label: string;
+  enabled: boolean;
+  onToggle: () => void;
+}
+
+function FilterToggle({ label, enabled, onToggle }: FilterToggleProps) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm font-medium text-ink-2">{label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-label={label}
+        aria-checked={enabled}
+        onClick={onToggle}
+        className={`inline-flex h-6 w-11 shrink-0 items-center overflow-hidden rounded-full p-0.5 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70 ${
+          enabled ? "bg-brand-strong" : "bg-line-2"
+        }`}
+      >
+        <span
+          aria-hidden="true"
+          className={`block h-5 w-5 shrink-0 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+            enabled ? "translate-x-5" : "translate-x-0"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
 // A multi-select spec filter: a scrollable group of checkboxes whose options are
 // lazily loaded from the API (with a static fallback). Ticking several boxes ORs
 // them, matching how StarTech's filter sidebar behaves.
@@ -207,44 +238,18 @@ export function FilterSidebar({
       </div>
 
       {/* In-stock toggle */}
-      <label className="flex cursor-pointer items-center justify-between">
-        <span className="text-sm font-medium text-ink-2">In Stock Only</span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={filters.inStockOnly}
-          onClick={() => onChange({ inStockOnly: !filters.inStockOnly })}
-          className={`relative h-6 w-11 rounded-full transition-colors duration-200 ${
-            filters.inStockOnly ? "bg-brand-strong" : "bg-line-2"
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 ${
-              filters.inStockOnly ? "translate-x-5" : "translate-x-0.5"
-            }`}
-          />
-        </button>
-      </label>
+      <FilterToggle
+        label="In Stock Only"
+        enabled={filters.inStockOnly}
+        onToggle={() => onChange({ inStockOnly: !filters.inStockOnly })}
+      />
 
       {/* Bundle-only toggle */}
-      <label className="flex cursor-pointer items-center justify-between">
-        <span className="text-sm font-medium text-ink-2">Bundle Only</span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={filters.bundleOnly}
-          onClick={() => onChange({ bundleOnly: !filters.bundleOnly })}
-          className={`relative h-6 w-11 rounded-full transition-colors duration-200 ${
-            filters.bundleOnly ? "bg-brand-strong" : "bg-line-2"
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 ${
-              filters.bundleOnly ? "translate-x-5" : "translate-x-0.5"
-            }`}
-          />
-        </button>
-      </label>
+      <FilterToggle
+        label="Bundle Only"
+        enabled={filters.bundleOnly}
+        onToggle={() => onChange({ bundleOnly: !filters.bundleOnly })}
+      />
 
       {/* Category-specific specs */}
       <div className="border-t border-line pt-4">
@@ -260,27 +265,12 @@ export function FilterSidebar({
                 onChange={(v) => setSpec(f.param, v)}
               />
             ) : (
-              <label
+              <FilterToggle
                 key={f.param}
-                className="flex cursor-pointer items-center justify-between"
-              >
-                <span className="text-sm font-medium text-ink-2">{f.label}</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={Boolean(filters.specs[f.param])}
-                  onClick={() => setSpec(f.param, !filters.specs[f.param])}
-                  className={`relative h-6 w-11 rounded-full transition-colors duration-200 ${
-                    filters.specs[f.param] ? "bg-brand-strong" : "bg-line-2"
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 ${
-                      filters.specs[f.param] ? "translate-x-5" : "translate-x-0.5"
-                    }`}
-                  />
-                </button>
-              </label>
+                label={f.label}
+                enabled={Boolean(filters.specs[f.param])}
+                onToggle={() => setSpec(f.param, !filters.specs[f.param])}
+              />
             ),
           )}
         </div>
