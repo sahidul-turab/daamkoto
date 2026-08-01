@@ -1,9 +1,10 @@
-import { Suspense, lazy, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type Ref } from "react";
 import {
   AlertTriangle,
   Check,
   ChevronRight,
   Eye,
+  Maximize2,
   Minus,
   PackageCheck,
   Plus,
@@ -12,6 +13,7 @@ import {
   ShieldCheck,
   ShoppingBag,
   Sparkles,
+  TrendingDown,
   X,
   Zap,
 } from "lucide-react";
@@ -29,7 +31,7 @@ import {
   type SlotId,
 } from "../../lib/buildConfig";
 import { evaluateBuild } from "../../lib/compat";
-import { computeBasket, type BasketItem } from "../../lib/basket";
+import { computeBasket, type Basket, type BasketItem } from "../../lib/basket";
 import { retailerColor } from "../../config";
 import { formatBDT } from "../../lib/format";
 import { useCountUp } from "../../lib/useCountUp";
@@ -281,6 +283,123 @@ function BuildSlotCard({
   );
 }
 
+interface BuildSnapshotProps {
+  build: BuildState;
+  errorSlots: Set<SlotId>;
+  basket: Basket;
+  selectedLines: number;
+  animatedBestTotal: number | null;
+  rigReady: boolean;
+  expanded: boolean;
+  previewButtonRef: Ref<HTMLButtonElement>;
+  onOpenPrices: () => void;
+  onExpand: () => void;
+}
+
+function BuildSnapshot({
+  build,
+  errorSlots,
+  basket,
+  selectedLines,
+  animatedBestTotal,
+  rigReady,
+  expanded,
+  previewButtonRef,
+  onOpenPrices,
+  onExpand,
+}: BuildSnapshotProps) {
+  const hasPricedItems = basket.items.length > 0;
+  const fullyPriced = selectedLines > 0 && basket.missingPrice.length === 0;
+  const hasSavings = fullyPriced && basket.bestSavingsVsSingleStore > 0 && basket.singleStore;
+
+  const priceNote =
+    selectedLines === 0
+      ? "Add parts to calculate your build"
+      : !hasPricedItems
+        ? "No current in-stock prices"
+        : basket.missingPrice.length > 0
+          ? `${basket.missingPrice.length} unavailable · priced parts only`
+          : hasSavings
+            ? `Save ${formatBDT(basket.bestSavingsVsSingleStore)} vs one store`
+            : basket.singleStore
+              ? "Lowest split and one-store totals match"
+              : "Lowest available price selected for each part";
+
+  return (
+    <div
+      className={`relative grid min-h-[104px] w-full min-w-0 max-w-full grid-cols-[minmax(0,1fr)_96px] overflow-hidden rounded-2xl border bg-gradient-to-br from-surface-2/95 to-surface/90 shadow-lg min-[420px]:grid-cols-[minmax(0,1fr)_108px] sm:max-w-[400px] lg:max-w-none ${
+        hasSavings ? "border-ok/35 shadow-ok/5" : "border-brand/25 shadow-brand-strong/5"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onOpenPrices}
+        className="group min-w-0 p-3.5 text-left transition-colors hover:bg-white/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/70"
+        aria-label="Open the build purchase plan"
+      >
+        <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-4">
+          <ShoppingBag className="h-3 w-3 text-brand" />
+          {basket.missingPrice.length > 0 ? "Priced best total" : "Best-price total"}
+        </span>
+        <span className="mt-1 block truncate text-[25px] font-extrabold leading-none tabular-nums text-ink">
+          {hasPricedItems ? formatBDT(animatedBestTotal) : "—"}
+        </span>
+        <span
+          className={`mt-2 flex min-w-0 items-center gap-1.5 text-[10px] font-semibold ${
+            hasSavings ? "text-ok" : basket.missingPrice.length > 0 ? "text-warn" : "text-ink-3"
+          }`}
+        >
+          {hasSavings ? <TrendingDown className="h-3 w-3 shrink-0" /> : null}
+          <span className="truncate">{priceNote}</span>
+        </span>
+        {basket.hasOverrides && hasPricedItems && (
+          <span className="mt-1 block truncate text-[9px] text-ink-4">
+            Your store choices: {formatBDT(basket.total)}
+          </span>
+        )}
+      </button>
+
+      <div className="relative min-h-[104px] overflow-hidden border-l border-line bg-black/10">
+        <span className="pointer-events-none absolute left-2.5 top-2 z-10 rounded-full border border-line bg-surface/80 px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.12em] text-ink-3 backdrop-blur">
+          Live 3D
+        </span>
+
+        <div className="pointer-events-none absolute inset-0">
+          {rigReady && !expanded ? (
+            <Suspense
+              fallback={
+                <div className="grid h-full place-items-center">
+                  <div className="h-10 w-10 animate-pulse rounded-xl border border-brand/25 bg-brand-strong/10" />
+                </div>
+              }
+            >
+              <Rig3D build={build} errorSlots={errorSlots} mode="mini" />
+            </Suspense>
+          ) : (
+            <div className="grid h-full place-items-center text-brand/70">
+              <Eye className="h-7 w-7" />
+            </div>
+          )}
+        </div>
+
+        <button
+          ref={previewButtonRef}
+          type="button"
+          onClick={onExpand}
+          aria-expanded={expanded}
+          aria-controls="build-3d-preview"
+          aria-label={expanded ? "Scroll to expanded 3D build preview" : "Expand the 3D build preview"}
+          className="absolute inset-0 z-20 rounded-r-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/70"
+        >
+          <span className="absolute bottom-2 right-2 grid h-6 w-6 place-items-center rounded-lg border border-line bg-surface/80 text-ink-2 shadow-sm backdrop-blur transition-colors hover:text-brand">
+            <Maximize2 className="h-3 w-3" />
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function BuildStudio({
   build,
   onSetPart,
@@ -296,10 +415,12 @@ export function BuildStudio({
   const [pickerSlot, setPickerSlot] = useState<SlotId | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
   const [showPreview, setShowPreview] = useState(false);
+  const [liveRigReady, setLiveRigReady] = useState(false);
   const [shareState, setShareState] = useState<"idle" | "copied" | "failed">("idle");
   const [confirmClear, setConfirmClear] = useState(false);
   const summaryRef = useRef<HTMLElement>(null);
   const previewRef = useRef<HTMLElement>(null);
+  const previewButtonRef = useRef<HTMLButtonElement>(null);
 
   const compat = useMemo(() => evaluateBuild(build), [build]);
   const basket = useMemo(() => computeBasket(build), [build]);
@@ -307,11 +428,31 @@ export function BuildStudio({
   const selectedLines = SLOTS.reduce((sum, slot) => sum + slotLines(build, slot.id).length, 0);
   const nextSlot = SLOTS.find((slot) => slotLines(build, slot.id).length === 0) ?? null;
   const animatedTotal = useCountUp(basket.total, 600);
+  const animatedBestTotal = useCountUp(basket.bestTotal, 600);
   const errors = compat.issues.filter((issue) => issue.level === "error").length;
   const warnings = compat.issues.filter((issue) => issue.level === "warn").length;
   const successfulChecks = compat.issues.filter((issue) => issue.level === "ok").length;
   const hasPowerParts = !!build.cpu?.length || !!build.gpu?.length;
   const hasPsu = !!build.psu?.length;
+  const fullyPriced = selectedLines > 0 && basket.missingPrice.length === 0;
+  const hasBestSavings = fullyPriced && basket.bestSavingsVsSingleStore > 0 && !!basket.singleStore;
+  const displayedPlanTotal = basket.hasOverrides ? animatedTotal : animatedBestTotal;
+
+  useEffect(() => {
+    // The 3D renderer is intentionally idle-loaded: the useful builder UI paints
+    // first, then the live rig appears without putting its large WebGL chunk on
+    // the critical path.
+    const idleWindow = window as unknown as {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (idleWindow.requestIdleCallback) {
+      const idleId = idleWindow.requestIdleCallback(() => setLiveRigReady(true), { timeout: 900 });
+      return () => idleWindow.cancelIdleCallback?.(idleId);
+    }
+    const timer = window.setTimeout(() => setLiveRigReady(true), 350);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const compatibilityLabel =
     partCount < 2
@@ -377,6 +518,11 @@ export function BuildStudio({
     window.setTimeout(() => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
   };
 
+  const closePreview = () => {
+    setShowPreview(false);
+    window.setTimeout(() => previewButtonRef.current?.focus({ preventScroll: true }), 0);
+  };
+
   const goToSummaryTab = (tab: DetailTab) => {
     setActiveTab(tab);
     if (window.matchMedia("(max-width: 1279px)").matches) {
@@ -391,8 +537,8 @@ export function BuildStudio({
       </div>
       <header className="glass relative overflow-hidden p-5 sm:p-6">
         <div className="pointer-events-none absolute -right-20 -top-32 h-72 w-72 rounded-full bg-brand-strong/10 blur-3xl" />
-        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl">
+        <div className="relative grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,340px)_auto] lg:items-center">
+          <div className="order-1 min-w-0 max-w-2xl">
             <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand-strong/10 px-2.5 py-1 text-[11px] font-semibold text-brand">
               <Sparkles className="h-3 w-3" /> Guided PC builder
             </div>
@@ -402,30 +548,56 @@ export function BuildStudio({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="order-3 min-w-0 max-w-full lg:order-2">
+            <BuildSnapshot
+              build={build}
+              errorSlots={compat.errorSlots}
+              basket={basket}
+              selectedLines={selectedLines}
+              animatedBestTotal={animatedBestTotal}
+              rigReady={liveRigReady}
+              expanded={showPreview}
+              previewButtonRef={previewButtonRef}
+              onOpenPrices={() => goToSummaryTab("prices")}
+              onExpand={openPreview}
+            />
+          </div>
+
+          <div className="order-2 flex min-w-0 w-full flex-wrap items-center gap-2 lg:order-3 lg:w-auto lg:justify-end">
             {partCount > 0 && (
               <button
                 type="button"
                 onClick={clearBuild}
                 onBlur={() => setConfirmClear(false)}
-                className={`btn-ghost !py-2 ${confirmClear ? "!border-brand/50 !text-brand" : ""}`}
+                aria-label={confirmClear ? "Confirm clearing this build" : "Clear this build"}
+                className={`btn-ghost !px-3 !py-2 ${confirmClear ? "!border-brand/50 !text-brand" : ""}`}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                {confirmClear ? "Click again to clear" : "Clear"}
+                <span className={confirmClear ? "" : "hidden sm:inline"}>
+                  {confirmClear ? "Click again to clear" : "Clear"}
+                </span>
               </button>
             )}
-            <button type="button" onClick={share} disabled={partCount === 0} className="btn-ghost !py-2">
+            <button
+              type="button"
+              onClick={share}
+              disabled={partCount === 0}
+              aria-label="Share this build"
+              className="btn-ghost !px-3 !py-2"
+            >
               {shareState === "copied" ? <Check className="h-3.5 w-3.5 text-ok" /> : <Share2 className="h-3.5 w-3.5" />}
-              {shareState === "copied" ? "Link copied" : shareState === "failed" ? "Copy failed" : "Share"}
+              <span className="hidden sm:inline">
+                {shareState === "copied" ? "Link copied" : shareState === "failed" ? "Copy failed" : "Share"}
+              </span>
             </button>
-            <button type="button" onClick={chooseNext} className="btn-brand !py-2">
+            <button type="button" onClick={chooseNext} className="btn-brand min-w-0 flex-1 !py-2 sm:flex-none">
               {nextSlot ? `Choose ${nextSlot.label}` : "Review prices"}
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        <div className="relative mt-5 grid gap-3 border-t border-line pt-4 lg:grid-cols-[minmax(280px,1fr)_auto_auto] lg:items-center">
+        <div className="relative mt-5 grid gap-3 border-t border-line pt-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div className="min-w-0">
             <div className="mb-2 flex items-center justify-between gap-3 text-[11px]">
               <span className="font-semibold text-ink-2">{partCount} of {SLOTS.length} component types selected</span>
@@ -472,20 +644,6 @@ export function BuildStudio({
             </span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => goToSummaryTab("prices")}
-            className="flex items-center gap-2 rounded-xl border border-line bg-surface-2/65 px-3 py-2 text-left hover:border-line-2"
-          >
-            <ShoppingBag className="h-4 w-4 shrink-0 text-brand" />
-            <span>
-              <span className="block text-[10px] uppercase tracking-wide text-ink-4">Priced total</span>
-              <span className="block text-[13px] font-extrabold tabular-nums text-ink">{formatBDT(animatedTotal)}</span>
-              {basket.missingPrice.length > 0 && (
-                <span className="block text-[9px] text-warn">{basket.missingPrice.length} unavailable</span>
-              )}
-            </span>
-          </button>
         </div>
       </header>
 
@@ -569,35 +727,86 @@ export function BuildStudio({
                 role="tabpanel"
                 aria-labelledby="build-tab-overview"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-4">
-                      {basket.missingPrice.length > 0 ? "Priced total" : "Build total"}
-                    </div>
-                    <div className="mt-1 text-3xl font-extrabold leading-none tabular-nums text-ink">{formatBDT(animatedTotal)}</div>
-                    <div className="mt-2 text-[11px] text-ink-4">
-                      {basket.items.length} priced {basket.items.length === 1 ? "product" : "products"}
-                      {basket.missingPrice.length > 0 && <span className="ml-1 text-warn">· {basket.missingPrice.length} unavailable</span>}
-                    </div>
-                  </div>
-                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-brand/20 bg-brand-strong/10 text-brand">
-                    <ShoppingBag className="h-5 w-5" />
-                  </div>
-                </div>
-
-                {basket.savingsVsSingleStore > 0 && basket.singleStore && basket.missingPrice.length === 0 && (
+                <div
+                  className={`overflow-hidden rounded-2xl border bg-gradient-to-br from-surface-2 to-surface/80 ${
+                    hasBestSavings ? "border-ok/35 shadow-lg shadow-ok/5" : "border-brand/25"
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => setActiveTab("prices")}
-                    className="mt-4 flex w-full items-center justify-between gap-3 rounded-xl border border-ok/25 bg-ok/[0.07] px-3.5 py-3 text-left"
+                    className="flex w-full items-start justify-between gap-4 p-4 text-left transition-colors hover:bg-white/[0.025]"
                   >
-                    <span>
-                      <span className="block text-[12px] font-semibold text-ok">Save {formatBDT(basket.savingsVsSingleStore)} by splitting stores</span>
-                      <span className="mt-0.5 block text-[10px] text-ink-4">See the purchase plan</span>
+                    <span className="min-w-0">
+                      <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-4">
+                        {basket.hasOverrides
+                          ? basket.missingPrice.length > 0
+                            ? "Priced selected-store total"
+                            : "Your selected-store total"
+                          : basket.missingPrice.length > 0
+                            ? "Priced best total"
+                            : "Best-price total"}
+                      </span>
+                      <span className="mt-1 block text-3xl font-extrabold leading-none tabular-nums text-ink">
+                        {basket.items.length > 0 ? formatBDT(displayedPlanTotal) : "—"}
+                      </span>
+                      <span className="mt-2 block text-[10px] text-ink-4">
+                        {basket.items.length} priced {basket.items.length === 1 ? "product" : "products"}
+                        {basket.missingPrice.length > 0 && (
+                          <span className="ml-1 text-warn">· {basket.missingPrice.length} unavailable</span>
+                        )}
+                      </span>
+                      {basket.hasOverrides && basket.items.length > 0 && (
+                        <span className="mt-1.5 block text-[10px] font-semibold text-ok">
+                          Best available: {formatBDT(animatedBestTotal)}
+                        </span>
+                      )}
                     </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-ok" />
+                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-brand/20 bg-brand-strong/10 text-brand">
+                      <ShoppingBag className="h-5 w-5" />
+                    </span>
                   </button>
-                )}
+
+                  {hasBestSavings && basket.singleStore ? (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("prices")}
+                      className="flex w-full items-center justify-between gap-3 border-t border-ok/25 bg-ok/[0.09] px-4 py-3.5 text-left transition-colors hover:bg-ok/[0.13]"
+                    >
+                      <span className="flex min-w-0 items-center gap-3">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-ok/15 text-ok">
+                          <TrendingDown className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[10px] font-semibold uppercase tracking-wide text-ok">You can save</span>
+                          <span className="block text-lg font-extrabold leading-tight tabular-nums text-ok">
+                            {formatBDT(basket.bestSavingsVsSingleStore)}
+                          </span>
+                          <span className="block truncate text-[9px] text-ink-4">
+                            Buy parts separately instead of {basket.singleStore.retailer} at {formatBDT(basket.singleStore.total)}
+                          </span>
+                        </span>
+                      </span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-ok" />
+                    </button>
+                  ) : (
+                    <div
+                      className={`border-t px-4 py-3 text-[10px] ${
+                        basket.missingPrice.length > 0
+                          ? "border-warn/20 bg-warn/[0.05] text-warn"
+                          : "border-line bg-white/[0.015] text-ink-4"
+                      }`}
+                    >
+                      {selectedLines === 0
+                        ? "Add products to calculate the total and possible savings."
+                        : basket.missingPrice.length > 0
+                          ? `${basket.missingPrice.length} unavailable ${basket.missingPrice.length === 1 ? "product is" : "products are"} not included in this total.`
+                          : basket.singleStore
+                            ? `One-store price at ${basket.singleStore.retailer} already matches the best split total.`
+                            : "No single retailer currently stocks every selected product."}
+                    </div>
+                  )}
+                </div>
 
                 <div className="mt-4 divide-y divide-line rounded-xl border border-line bg-surface-2/45">
                   <button
@@ -700,8 +909,23 @@ export function BuildStudio({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-4">Purchase plan</div>
-                    <div className="mt-1 text-2xl font-extrabold tabular-nums text-ink">{formatBDT(animatedTotal)}</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-4">
+                      {basket.hasOverrides
+                        ? basket.missingPrice.length > 0
+                          ? "Priced selected-store total"
+                          : "Your selected-store total"
+                        : basket.missingPrice.length > 0
+                          ? "Priced best-price plan"
+                          : "Best-price purchase plan"}
+                    </div>
+                    <div className="mt-1 text-2xl font-extrabold tabular-nums text-ink">
+                      {basket.items.length > 0 ? formatBDT(displayedPlanTotal) : "—"}
+                    </div>
+                    {basket.hasOverrides && basket.items.length > 0 && (
+                      <div className="mt-1 text-[10px] font-semibold text-ok">
+                        Best available: {formatBDT(animatedBestTotal)}
+                      </div>
+                    )}
                   </div>
                   <ShoppingBag className="h-5 w-5 text-brand" />
                 </div>
@@ -739,9 +963,11 @@ export function BuildStudio({
                       </div>
                     )}
 
-                    {basket.savingsVsSingleStore > 0 && basket.singleStore && basket.missingPrice.length === 0 ? (
-                      <div className="mt-4 rounded-xl border border-ok/25 bg-ok/[0.07] px-3.5 py-3">
-                        <div className="text-[12px] font-semibold text-ok">Split shopping saves {formatBDT(basket.savingsVsSingleStore)}</div>
+                    {hasBestSavings && basket.singleStore ? (
+                      <div className="mt-4 rounded-xl border border-ok/35 bg-ok/[0.09] px-3.5 py-3 shadow-lg shadow-ok/5">
+                        <div className="flex items-center gap-2 text-[13px] font-bold text-ok">
+                          <TrendingDown className="h-4 w-4" /> Save {formatBDT(basket.bestSavingsVsSingleStore)} with the best-price split
+                        </div>
                         <div className="mt-0.5 text-[10px] text-ink-4">
                           Compared with buying everything at {basket.singleStore.retailer} for {formatBDT(basket.singleStore.total)}.
                         </div>
@@ -831,19 +1057,19 @@ export function BuildStudio({
       </div>
 
       {showPreview && (
-        <section ref={previewRef} className="glass scroll-mt-24 overflow-hidden">
+        <section id="build-3d-preview" ref={previewRef} className="glass scroll-mt-24 overflow-hidden">
           <div className="flex items-center justify-between gap-4 border-b border-line px-4 py-3.5 sm:px-5">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-sm font-bold text-ink"><Eye className="h-4 w-4 text-brand" /> 3D build preview</div>
               <div className="mt-0.5 text-[10px] text-ink-4">Drag to rotate · scroll to zoom</div>
             </div>
-            <button type="button" onClick={() => setShowPreview(false)} className="btn-ghost !p-2" aria-label="Close 3D preview">
+            <button type="button" onClick={closePreview} className="btn-ghost !p-2" aria-label="Close 3D preview">
               <X className="h-4 w-4" />
             </button>
           </div>
           <div className="relative h-[320px] sm:h-[420px]">
             <Suspense fallback={<div className="grid h-full place-items-center text-sm text-ink-4">Loading 3D preview…</div>}>
-              <Rig3D build={build} errorSlots={compat.errorSlots} />
+              <Rig3D build={build} errorSlots={compat.errorSlots} mode="interactive" />
             </Suspense>
             {partCount === 0 && (
               <div className="pointer-events-none absolute inset-x-0 bottom-5 text-center text-xs text-ink-4">Add parts and watch your rig come together.</div>
@@ -855,10 +1081,18 @@ export function BuildStudio({
       <div className="fixed inset-x-3 bottom-3 z-30 lg:hidden">
         <div className="mx-auto flex max-w-xl items-center gap-3 rounded-2xl border border-line-2 bg-surface/95 p-2.5 shadow-2xl backdrop-blur-xl">
           <div className="min-w-0 flex-1 pl-1">
-            <div className="truncate text-base font-extrabold tabular-nums text-ink">{formatBDT(animatedTotal)}</div>
-            <div className="text-[10px] text-ink-4">
-              {partCount}/{SLOTS.length} component types
-              {basket.missingPrice.length > 0 && <span className="text-warn"> · {basket.missingPrice.length} unavailable</span>}
+            <div className="truncate text-base font-extrabold tabular-nums text-ink">
+              {basket.items.length > 0 ? formatBDT(animatedBestTotal) : "—"}
+            </div>
+            <div className={`truncate text-[10px] ${hasBestSavings ? "font-semibold text-ok" : "text-ink-4"}`}>
+              {hasBestSavings
+                ? `Save ${formatBDT(basket.bestSavingsVsSingleStore)} vs one store`
+                : basket.hasOverrides && basket.items.length > 0
+                  ? `Best available · your choices ${formatBDT(basket.total)}`
+                  : `${partCount}/${SLOTS.length} component types`}
+              {!hasBestSavings && !basket.hasOverrides && basket.missingPrice.length > 0 && (
+                <span className="text-warn"> · {basket.missingPrice.length} unavailable</span>
+              )}
             </div>
           </div>
           <button type="button" onClick={chooseNext} className="btn-brand !px-3.5 !py-2.5">

@@ -15,10 +15,13 @@ export interface BasketItem {
 
 export interface Basket {
   items: BasketItem[];
+  bestTotal: number;
+  hasOverrides: boolean;
   total: number;                                    // Σ lineTotal
   perStore: { retailer: string; total: number }[];  // qty-weighted, sorted desc
   singleStore: { retailer: string; total: number } | null; // cheapest retailer stocking every line
   savingsVsSingleStore: number;                     // max(0, singleStore.total - total)
+  bestSavingsVsSingleStore: number;
   missingPrice: { slotId: SlotId; lineIndex: number }[];
 }
 
@@ -84,6 +87,11 @@ export function computeBasket(build: BuildState): Basket {
   }
 
   const total = items.reduce((s, it) => s + it.lineTotal, 0);
+  const bestTotal = items.reduce(
+    (sum, item) => sum + (item.options[0]?.price ?? item.unitPrice) * item.qty,
+    0,
+  );
+  const hasOverrides = items.some((item) => item.overridden);
   const perStore = [...perStoreMap.entries()]
     .map(([retailer, t]) => ({ retailer, total: t }))
     .sort((a, b) => b.total - a.total);
@@ -111,6 +119,19 @@ export function computeBasket(build: BuildState): Basket {
   }
 
   const savingsVsSingleStore = singleStore ? Math.max(0, singleStore.total - total) : 0;
+  const bestSavingsVsSingleStore = singleStore
+    ? Math.max(0, singleStore.total - bestTotal)
+    : 0;
 
-  return { items, total, perStore, singleStore, savingsVsSingleStore, missingPrice };
+  return {
+    items,
+    bestTotal,
+    hasOverrides,
+    total,
+    perStore,
+    singleStore,
+    savingsVsSingleStore,
+    bestSavingsVsSingleStore,
+    missingPrice,
+  };
 }
