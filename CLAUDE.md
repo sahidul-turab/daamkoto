@@ -699,6 +699,7 @@ Every one of these has already cost real debugging time. They share a pattern:
 |---|---|
 | **Bundling** | Adding `manualChunks` to `vite.config.ts`, or statically importing a lazy component into the Browse path, silently puts ~190 kB gzip back on the critical path. Verify: `npm run build && grep modulepreload dist/index.html` |
 | **Spec filters** | A key missing from `_ALLOWED_SPEC_KEYS` is ignored — the filter renders and does nothing |
+| **match_key changes** | Changing `build_match_key` or any extractor feeding it is a **data migration, not a patch**. `products` is `UNIQUE (match_key, name)`, so a new key makes the loader insert a *second* product per item while the original keeps its price history — one product silently becomes two with half a chart each. Diff the keys against production first, check collisions, move the existing rows, *then* ship. See `scripts/backfill_ram_speed_keys.py` |
 | **Cache warmup** | `_WARM_CATEGORIES` / `_WARM_PAGE_SIZE` / `_WARM_SORTS` must mirror the frontend, or the warmup fills keys nobody requests |
 | **Cache loaders** | A loader passed to `cache.get_or_load` **must open its own connection** — it can run on a background thread after the request returned |
 | **Unbounded query** | `/products` with neither `category` nor `search` scans the whole catalogue. `useProductSearch` refuses it; keep that guard |
