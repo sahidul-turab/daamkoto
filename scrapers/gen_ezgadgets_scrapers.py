@@ -159,6 +159,24 @@ ARCHIVE_URL   = f"{{BASE_URL}}/{fallback_path}/"
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 
+# Same stealth payload the Ryans scraper uses. Ryans is Cloudflare-protected too
+# and pulls ~7,000 rows per nightly CI sweep, so this combination is known to
+# clear Cloudflare from a GitHub Actions IP — it is not a guess.
+_STEALTH_SCRIPT = """\\
+Object.defineProperty(navigator, 'webdriver', {{get: () => undefined}});
+Object.defineProperty(navigator, 'plugins', {{get: () => [1,2,3,4,5]}});
+window.chrome = {{runtime: {{}}}};
+"""
+
+
+async def _make_context(browser):
+    ctx = await browser.new_context(
+        user_agent=USER_AGENT,
+        viewport={{"width": 1400, "height": 1000}},
+    )
+    await ctx.add_init_script(_STEALTH_SCRIPT)
+    return ctx
+
 PAGE_DELAY = 2.5    # seconds between requests — polite crawling
 PER_PAGE   = 100    # Store API maximum
 MAX_PAGES  = 60     # backstop against a paginator that never terminates
@@ -432,34 +450,20 @@ def pick_price(rec: dict) -> tuple[float | None, float | None]:
     return amounts[0], None
 
 
-async def archive_page_state(page, url: str) -> str:
-    """Classify an archive page: 'products' | 'empty' | 'blocked'.
+async def scrape_archive_page(page, url: str) -> list[dict]:
+    """Records on one archive page. Raises Blocked if the grid never renders.
 
-    An out-of-range page 404s with no product grid, and so does a Cloudflare
-    interstitial. Telling them apart is the whole point — one means stop, the
-    other means retry — so check for the real 404 marker before concluding.
+    There is no 'empty page' case here: the caller reads the real page count
+    from page 1's pagination and never requests a page past it, so a missing
+    product grid always means blocked. Guessing 'empty vs blocked' from the
+    markup was tried and got it wrong — a one-page category's page 2 was read as
+    a block, which failed 14 complete scrapes.
     """
-    resp = await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-    status = resp.status if resp else 0
+    await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
     try:
         await page.wait_for_selector(".wd-product", timeout=15_000)
-        return "products"
     except PlaywrightTimeout:
-        pass
-    if status == 404:
-        return "empty"          # genuinely past the last page
-    body = (await page.content()).lower()
-    if "product-category" in body and "wd-products" in body:
-        return "empty"          # rendered listing shell with nothing in it
-    return "blocked"
-
-
-async def scrape_archive_page(page, url: str) -> list[dict]:
-    state = await archive_page_state(page, url)
-    if state == "blocked":
-        raise Blocked(f"archive page looked blocked: {{url}}")
-    if state == "empty":
-        return []
+        raise Blocked(f"no product grid at {{url}}")
 
     for y in [400, 900, 1600]:
         await page.evaluate(f"window.scrollTo(0, {{y}})")
@@ -498,47 +502,71 @@ async def scrape_archive_page(page, url: str) -> list[dict]:
     return products
 
 
-async def scrape_via_dom(page) -> list[dict]:
-    """Page through the category archive.
+async def _fetch_one_page(browser, page_num: int, want_count: bool):
+    """Fetch one archive page in a **fresh browser context**, with retries.
 
-    Raises Blocked rather than returning a short list. The first production run
-    stopped `keyboard` at 20 products because a blocked page 2 read as the end
-    of a 199-product category, and nothing anywhere reported a problem.
+    Reusing one context across pages makes Cloudflare re-issue its challenge and
+    the scrape dies — the same behaviour documented for Ryans in CLAUDE.md. A
+    context per page is slower and reliable; Ryans pulls ~7,000 rows a night
+    from CI this way.
     """
-    products: list[dict] = []
+    url = ARCHIVE_URL if page_num == 1 else f"{{ARCHIVE_URL}}page/{{page_num}}/"
+    print(f"Scraping page {{page_num}}: {{url}}")
+
+    for attempt in range(RETRIES):
+        ctx = await _make_context(browser)
+        page = await ctx.new_page()
+        try:
+            found = await scrape_archive_page(page, url)
+            total = await page_count(page) if want_count else None
+            return found, total
+        except Blocked as exc:
+            print(f"  [dom] {{exc}} (attempt {{attempt + 1}}/{{RETRIES}})")
+            if attempt + 1 < RETRIES:
+                await _sleep_backoff(attempt)
+        finally:
+            await ctx.close()
+
+    raise Blocked(f"page {{page_num}} still blocked after {{RETRIES}} attempts")
+
+
+async def page_count(page) -> int:
+    """Highest page number in the archive's pagination (1 if unpaginated)."""
+    return await page.evaluate(
+        """() => {{
+            const ns = [...document.querySelectorAll('.page-numbers')]
+                .map(a => parseInt(a.textContent.trim()))
+                .filter(n => !isNaN(n));
+            return ns.length ? Math.max(...ns) : 1;
+        }}"""
+    )
+
+
+async def scrape_via_dom(browser) -> list[dict]:
+    """Page through the category archive, a fresh context per page.
+
+    Page 1 reports how many pages exist, and we fetch exactly that many. Nothing
+    beyond the last page is ever requested, so there is no ambiguous empty page
+    to misread, and any failure inside 1..N is a genuine block that raises
+    rather than quietly returning a short list.
+    """
+    first, total = await _fetch_one_page(browser, 1, want_count=True)
+    total = min(total or 1, MAX_PAGES)
+    print(f"  Found {{len(first)}} products.  ({{total}} page(s) in this category)")
+
     seen: set[str] = set()
+    products: list[dict] = []
+    for rec in first:
+        seen.add(rec["product_url"])
+        products.append(rec)
 
-    page_num = 1
-    while page_num <= MAX_PAGES:
-        url = ARCHIVE_URL if page_num == 1 else f"{{ARCHIVE_URL}}page/{{page_num}}/"
-        print(f"Scraping page {{page_num}}: {{url}}")
-
-        found = None
-        for attempt in range(RETRIES):
-            try:
-                found = await scrape_archive_page(page, url)
-                break
-            except Blocked as exc:
-                print(f"  [dom] {{exc}} (attempt {{attempt + 1}}/{{RETRIES}})")
-                if attempt + 1 < RETRIES:
-                    await _sleep_backoff(attempt)
-        if found is None:
-            raise Blocked(f"page {{page_num}} still blocked after {{RETRIES}} attempts")
-
+    for page_num in range(2, total + 1):
+        await asyncio.sleep(PAGE_DELAY)
+        found, _ = await _fetch_one_page(browser, page_num, want_count=False)
         print(f"  Found {{len(found)}} products.")
-        if not found:
-            print("  No products — reached end.")
-            break
-
         fresh = [p for p in found if p["product_url"] not in seen]
-        if not fresh:
-            print("  Page repeated earlier results — stopping.")
-            break
         seen.update(p["product_url"] for p in fresh)
         products.extend(fresh)
-
-        page_num += 1
-        await asyncio.sleep(PAGE_DELAY)
 
     return products
 
@@ -547,30 +575,32 @@ async def scrape_via_dom(page) -> list[dict]:
 
 async def main(save: bool = False, force_dom: bool = False):
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
-        ctx = await browser.new_context(
-            user_agent=USER_AGENT,
-            viewport={{"width": 1400, "height": 1000}},
+        browser = await pw.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"],
         )
-        # Land on a real page first so Cloudflare issues its cookies, and so the
-        # API fetches below run same-origin from a page it has already cleared.
-        page = await ctx.new_page()
-        await page.goto(ARCHIVE_URL, wait_until="domcontentloaded", timeout=90_000)
-        await page.wait_for_timeout(2000)
 
         all_products = None
         if not force_dom:
+            # Land on a real page first so Cloudflare issues its cookies, and so
+            # the API fetch runs same-origin from a page it has already cleared.
+            ctx = await _make_context(browser)
+            page = await ctx.new_page()
+            await page.goto(ARCHIVE_URL, wait_until="domcontentloaded", timeout=90_000)
+            await page.wait_for_timeout(2000)
             all_products = await scrape_via_api(page)
+            await ctx.close()
 
         if all_products is None:
             if not force_dom:
                 print("\\n" + "!" * 62)
                 print("!! Store API unavailable — falling back to DOM scraping.")
-                print("!! If this persists the shop has closed /wp-json; the DOM")
-                print("!! path is slower and theme-coupled, so check it still parses.")
+                print("!! Expected on datacenter IPs: Cloudflare answers /wp-json")
+                print("!! with 403 from GitHub Actions while allowing it locally.")
+                print("!! A 403 here is normal in CI; anything else is worth a look.")
                 print("!" * 62 + "\\n")
             try:
-                all_products = await scrape_via_dom(page)
+                all_products = await scrape_via_dom(browser)
             except Blocked as exc:
                 await browser.close()
                 # Exit non-zero. run_pipeline treats a failed scrape as non-fatal
