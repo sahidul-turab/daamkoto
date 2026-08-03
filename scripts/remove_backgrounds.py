@@ -23,6 +23,8 @@ import hashlib
 import io
 import os
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ProcessPoolExecutor
@@ -78,11 +80,36 @@ def _worker_init():
         )
 
 
-def _fetch(url: str) -> bytes:
+def _fetch(url: str, attempts: int = 4) -> bytes:
+    """Download one image, backing off when a shop rate-limits us.
+
+    A pool of workers pulling images as fast as rembg finishes them is a burst,
+    and Cloudflare-fronted shops answer a burst with 403. Ryans returned 403 for
+    747 images in one run; every one of those URLs served 200 to the *same*
+    User-Agent moments later, one at a time. So a 403 here means "slow down",
+    not "forbidden" — retrying is what makes the difference between 79% and full
+    coverage for that retailer.
+
+    Only failures worth retrying are retried: 403 and 429 (rate limits) and 5xx
+    (transient). A 404 is a dead image URL and returns immediately.
+    """
     safe = urllib.parse.quote(url, safe=":/?#[]@!$&'()*+,;=~%")
-    req = urllib.request.Request(safe, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return r.read()
+    for attempt in range(attempts):
+        req = urllib.request.Request(safe, headers={"User-Agent": UA})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.read()
+        except urllib.error.HTTPError as exc:
+            retryable = exc.code in (403, 408, 429) or 500 <= exc.code < 600
+            if not retryable or attempt + 1 == attempts:
+                raise
+        except urllib.error.URLError:
+            if attempt + 1 == attempts:
+                raise
+        # 2s, 6s, 14s — long enough for a rate-limit window to roll over
+        # without stalling a run of thousands of images.
+        time.sleep(2 * (2 ** (attempt + 1)) - 2)
+    raise RuntimeError(f"unreachable: {url}")
 
 
 def _process(url: str):
