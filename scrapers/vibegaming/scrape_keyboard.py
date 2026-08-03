@@ -119,11 +119,38 @@ async def dom_price(card) -> float | None:
     return None
 
 
-async def scrape_page(page, url: str) -> list[dict]:
-    await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+async def describe_empty(page, resp, url: str) -> None:
+    """Say *why* a listing looked empty.
+
+    A shop that blocks the caller still returns a page, so `goto` succeeds and
+    only the card selector is missing — indistinguishable from a genuinely empty
+    category unless we look. This ran clean locally but returned nothing from a
+    GitHub runner, and the log said only "no products", which is the silent
+    failure this repo keeps getting bitten by.
+    """
     try:
-        await page.wait_for_selector(CARD_SELECTOR, timeout=15_000)
+        status = resp.status if resp else "?"
+        title = (await page.title() or "").strip()
+        body = await page.evaluate(
+            r"() => (document.body ? document.body.innerText : '')"
+            r".replace(/\s+/g, ' ').trim().slice(0, 300)"
+        )
+        print(f"    [diagnostic] HTTP {status}  final_url={page.url}")
+        print(f"    [diagnostic] title={title[:120]!r}")
+        print(f"    [diagnostic] body={body[:240]!r}")
+    except Exception as exc:  # diagnostics must never mask the real failure
+        print(f"    [diagnostic] unavailable: {exc}")
+
+
+async def scrape_page(page, url: str, diagnose: bool = False) -> list[dict]:
+    resp = await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+    try:
+        # Generous: a cold shop behind a CDN can take a while to paint cards,
+        # and a false "empty" here costs the whole category.
+        await page.wait_for_selector(CARD_SELECTOR, timeout=30_000)
     except PlaywrightTimeout:
+        if diagnose:
+            await describe_empty(page, resp, url)
         return []
 
     for y in [400, 800, 1600]:
@@ -214,7 +241,14 @@ async def scrape_listing(page, start_url: str, seen: set) -> list[dict]:
     for page_num in range(1, MAX_PAGES + 1):
         url = start_url if page_num == 1 else f"{start_url}page/{page_num}/"
         print(f"  page {page_num}: {url}")
-        products = await scrape_page(page, url)
+        products = await scrape_page(page, url, diagnose=(page_num == 1))
+        # Page 1 empty means blocked or broken, never "category is empty" —
+        # every listing here was verified to hold products. Worth one retry,
+        # since the usual cause is a transient rate-limit.
+        if not products and page_num == 1:
+            print("    page 1 empty — retrying once in 15s.")
+            time.sleep(15)
+            products = await scrape_page(page, url, diagnose=True)
         if not products:
             print("    no products — end of listing.")
             break
@@ -273,6 +307,13 @@ async def main(save: bool = False):
     if in_stock:
         cheapest = min(in_stock, key=lambda p: p["price_bdt"])
         print(f"Cheapest: {cheapest['name'][:70]}")
+
+    # Exit non-zero on a total blank so run_pipeline reports this retailer as
+    # skipped instead of loading an empty file and looking successful. Every
+    # listing above is known to hold products, so zero always means failure.
+    if not all_products:
+        print("\nFAILED: every listing returned zero products — see diagnostics above.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

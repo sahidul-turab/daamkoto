@@ -1,0 +1,72 @@
+# Run one retailer's scraper on a GitHub runner and print what it saw.
+#
+# Exists because a scraper can behave completely differently from a runner than
+# from a laptop: a shop that is happy to serve a residential connection in Dhaka
+# may serve a bot-check page to an Azure datacentre IP. That failure looks
+# identical to an empty category in the pipeline log, and the only way to tell
+# the difference used to be a full 4-hour sweep.
+#
+# This touches no database and saves nothing. It runs the scraper without
+# --save purely so the diagnostics print.
+#
+# Usage:
+#   gh workflow run probe-retailer.yml -f retailer=vibegaming -f category=webcam
+
+name: Probe retailer
+
+on:
+  workflow_dispatch:
+    inputs:
+      retailer:
+        description: "Retailer slug, e.g. vibegaming"
+        required: true
+        default: "vibegaming"
+      category:
+        description: "Category slug, e.g. webcam (pick a small one)"
+        required: true
+        default: "webcam"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      # Does the shop answer this runner at all, and with what?
+      - name: Raw HTTP check
+        run: |
+          SLUG="${{ github.event.inputs.retailer }}"
+          HOST=$(python - "$SLUG" <<'PY'
+          import sys, pathlib, re
+          slug = sys.argv[1]
+          for p in sorted(pathlib.Path(f"scrapers/{slug}").glob("scrape_*.py")):
+              m = re.search(r'BASE_URL\s*=\s*"([^"]+)"', p.read_text(encoding="utf-8"))
+              if m:
+                  print(m.group(1)); break
+          PY
+          )
+          echo "Base URL: $HOST"
+          echo "--- headers ---"
+          curl -sS -o /dev/null -D - --max-time 45 \
+            -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
+            "$HOST" || echo "curl failed with $?"
+
+      - name: Run the scraper (no --save, no DB)
+        run: |
+          python "scrapers/${{ github.event.inputs.retailer }}/scrape_${{ github.event.inputs.category }}.py"
