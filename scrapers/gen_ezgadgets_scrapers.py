@@ -22,6 +22,28 @@ The DOM scraper is kept as a fallback and runs if the API is unavailable. It
 prints a loud warning when that happens: a shop closing the Store API must not
 look like a normal run.
 
+Cloudflare, and why the API is fetched from inside the page
+-----------------------------------------------------------
+The first production run got 111 listings where a local run got 600, because
+Cloudflare treats a GitHub Actions datacenter IP very differently from a
+residential Bangladeshi one. Two failures compounded:
+
+  * `context.request.get()` shares cookies with the browser but runs no JS, so a
+    Cloudflare challenge on `/wp-json` fails it outright. Every category logged
+    "could not resolve category slug". The API is now fetched with `fetch()`
+    *inside the live page*, same-origin, which carries the real browser
+    fingerprint and any clearance cookie Cloudflare has already issued.
+  * The DOM fallback then treated a blocked page as the end of the category.
+    `keyboard` returned 20 products — exactly one archive page — and stopped,
+    which is indistinguishable from a category that genuinely has 20. Empty
+    pages are now retried with backoff before the loop is allowed to conclude,
+    and a category that ends on a *failed* page raises instead of returning a
+    truncated list.
+
+The second one is the dangerous class of bug this project keeps hitting: a
+scraper that returns fewer records still looks like a success. See the Ryans URL
+incident in IMPROVEMENTS.md §10.2.
+
 Field notes
 -----------
   * Prices are integer minor units — "549900" with currency_minor_unit 2 is
@@ -140,23 +162,78 @@ USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 PAGE_DELAY = 2.5    # seconds between requests — polite crawling
 PER_PAGE   = 100    # Store API maximum
 MAX_PAGES  = 60     # backstop against a paginator that never terminates
+RETRIES    = 3      # attempts per request before giving up on it
+
+
+class Blocked(Exception):
+    """A request failed in a way that must not be mistaken for 'no more data'."""
+
+
+async def _sleep_backoff(attempt: int) -> None:
+    await asyncio.sleep(PAGE_DELAY * (2 ** attempt))
 
 
 # ---------------------------------------------------------------------------
 # Store API (primary)
 # ---------------------------------------------------------------------------
 
-async def resolve_category_id(ctx, slug: str) -> int | None:
-    """Map a category slug to its WordPress term id."""
+async def api_get(page, url: str):
+    """GET JSON with fetch() from inside the live page. Returns (status, body).
+
+    Deliberately not `context.request.get()`. That shares cookies but executes
+    no JavaScript, so Cloudflare's challenge on /wp-json defeats it — which is
+    why the first production run resolved zero categories from a GitHub Actions
+    runner while a residential IP worked fine. A same-origin fetch() from the
+    page carries the full browser fingerprint and any clearance cookie already
+    issued.
+    """
+    return await page.evaluate(
+        """async (u) => {{
+            try {{
+                const r = await fetch(u, {{
+                    credentials: 'include',
+                    headers: {{'Accept': 'application/json'}},
+                }});
+                let body = null;
+                try {{ body = await r.json(); }} catch (e) {{ body = null; }}
+                return [r.status, body];
+            }} catch (e) {{
+                return [0, null];
+            }}
+        }}""",
+        url,
+    )
+
+
+async def api_get_retrying(page, url: str, what: str):
+    """api_get with backoff. Raises Blocked if every attempt fails."""
+    last = None
+    for attempt in range(RETRIES):
+        status, body = await api_get(page, url)
+        if status == 200 and body is not None:
+            return body
+        last = status
+        print(f"  [api] HTTP {{status}} on {{what}} (attempt {{attempt + 1}}/{{RETRIES}})")
+        if attempt + 1 < RETRIES:
+            await _sleep_backoff(attempt)
+    raise Blocked(f"{{what}} failed after {{RETRIES}} attempts (last status {{last}})")
+
+
+async def resolve_category_id(page, slug: str) -> int | None:
+    """Map a category slug to its WordPress term id.
+
+    Returns None only when the slug genuinely is not in the catalogue. A
+    transport failure raises Blocked instead, so 'the shop dropped this
+    category' can never be confused with 'Cloudflare said no'.
+    """
     page_num = 1
     while page_num <= 10:
-        r = await ctx.request.get(
+        rows = await api_get_retrying(
+            page,
             f"{{BASE_URL}}/wp-json/wc/store/v1/products/categories"
-            f"?per_page=100&page={{page_num}}"
+            f"?per_page=100&page={{page_num}}",
+            f"categories page {{page_num}}",
         )
-        if r.status != 200:
-            return None
-        rows = await r.json()
         if not rows:
             return None
         for row in rows:
@@ -220,11 +297,20 @@ def from_api(p: dict, scraped_at: str) -> dict | None:
     }}
 
 
-async def scrape_via_api(ctx) -> list[dict] | None:
-    """Return records, or None if the Store API is unusable (caller falls back)."""
-    cat_id = await resolve_category_id(ctx, CATEGORY_SLUG)
+async def scrape_via_api(page) -> list[dict] | None:
+    """Return records, or None if the Store API is unusable (caller falls back).
+
+    Any partial result is discarded rather than returned: a category truncated
+    by a block looks exactly like a category that shrank, and the loader cannot
+    tell the difference.
+    """
+    try:
+        cat_id = await resolve_category_id(page, CATEGORY_SLUG)
+    except Blocked as exc:
+        print(f"  [api] {{exc}}")
+        return None
     if cat_id is None:
-        print(f"  [api] could not resolve category slug {{CATEGORY_SLUG!r}}")
+        print(f"  [api] slug {{CATEGORY_SLUG!r}} is not in the catalogue")
         return None
     print(f"  [api] category {{CATEGORY_SLUG!r}} -> id {{cat_id}}")
 
@@ -237,17 +323,12 @@ async def scrape_via_api(ctx) -> list[dict] | None:
         url = (f"{{BASE_URL}}/wp-json/wc/store/v1/products"
                f"?category={{cat_id}}&per_page={{PER_PAGE}}&page={{page_num}}")
         print(f"Fetching page {{page_num}}: {{url}}")
-        r = await ctx.request.get(url)
-        if r.status != 200:
-            if page_num == 1:
-                print(f"  [api] HTTP {{r.status}} on the first page")
-                return None
-            # A later page failing would silently truncate the category, which
-            # looks identical to a shop that shrank. Refuse the partial result.
-            print(f"  [api] HTTP {{r.status}} on page {{page_num}} — partial result rejected")
+        try:
+            rows = await api_get_retrying(page, url, f"products page {{page_num}}")
+        except Blocked as exc:
+            print(f"  [api] {{exc}} — discarding {{len(products)}} partial records")
             return None
 
-        rows = await r.json()
         print(f"  Found {{len(rows)}} products.")
         if not rows:
             break
@@ -351,11 +432,33 @@ def pick_price(rec: dict) -> tuple[float | None, float | None]:
     return amounts[0], None
 
 
-async def scrape_archive_page(page, url: str) -> list[dict]:
-    await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+async def archive_page_state(page, url: str) -> str:
+    """Classify an archive page: 'products' | 'empty' | 'blocked'.
+
+    An out-of-range page 404s with no product grid, and so does a Cloudflare
+    interstitial. Telling them apart is the whole point — one means stop, the
+    other means retry — so check for the real 404 marker before concluding.
+    """
+    resp = await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+    status = resp.status if resp else 0
     try:
         await page.wait_for_selector(".wd-product", timeout=15_000)
+        return "products"
     except PlaywrightTimeout:
+        pass
+    if status == 404:
+        return "empty"          # genuinely past the last page
+    body = (await page.content()).lower()
+    if "product-category" in body and "wd-products" in body:
+        return "empty"          # rendered listing shell with nothing in it
+    return "blocked"
+
+
+async def scrape_archive_page(page, url: str) -> list[dict]:
+    state = await archive_page_state(page, url)
+    if state == "blocked":
+        raise Blocked(f"archive page looked blocked: {{url}}")
+    if state == "empty":
         return []
 
     for y in [400, 900, 1600]:
@@ -395,8 +498,13 @@ async def scrape_archive_page(page, url: str) -> list[dict]:
     return products
 
 
-async def scrape_via_dom(ctx) -> list[dict]:
-    page = await ctx.new_page()
+async def scrape_via_dom(page) -> list[dict]:
+    """Page through the category archive.
+
+    Raises Blocked rather than returning a short list. The first production run
+    stopped `keyboard` at 20 products because a blocked page 2 read as the end
+    of a 199-product category, and nothing anywhere reported a problem.
+    """
     products: list[dict] = []
     seen: set[str] = set()
 
@@ -404,7 +512,19 @@ async def scrape_via_dom(ctx) -> list[dict]:
     while page_num <= MAX_PAGES:
         url = ARCHIVE_URL if page_num == 1 else f"{{ARCHIVE_URL}}page/{{page_num}}/"
         print(f"Scraping page {{page_num}}: {{url}}")
-        found = await scrape_archive_page(page, url)
+
+        found = None
+        for attempt in range(RETRIES):
+            try:
+                found = await scrape_archive_page(page, url)
+                break
+            except Blocked as exc:
+                print(f"  [dom] {{exc}} (attempt {{attempt + 1}}/{{RETRIES}})")
+                if attempt + 1 < RETRIES:
+                    await _sleep_backoff(attempt)
+        if found is None:
+            raise Blocked(f"page {{page_num}} still blocked after {{RETRIES}} attempts")
+
         print(f"  Found {{len(found)}} products.")
         if not found:
             print("  No products — reached end.")
@@ -420,7 +540,6 @@ async def scrape_via_dom(ctx) -> list[dict]:
         page_num += 1
         await asyncio.sleep(PAGE_DELAY)
 
-    await page.close()
     return products
 
 
@@ -433,16 +552,15 @@ async def main(save: bool = False, force_dom: bool = False):
             user_agent=USER_AGENT,
             viewport={{"width": 1400, "height": 1000}},
         )
-        # Load a real page first so Cloudflare hands out whatever cookies it
-        # wants before we start issuing API calls.
-        warmup = await ctx.new_page()
-        await warmup.goto(ARCHIVE_URL, wait_until="domcontentloaded", timeout=90_000)
-        await warmup.wait_for_timeout(2000)
-        await warmup.close()
+        # Land on a real page first so Cloudflare issues its cookies, and so the
+        # API fetches below run same-origin from a page it has already cleared.
+        page = await ctx.new_page()
+        await page.goto(ARCHIVE_URL, wait_until="domcontentloaded", timeout=90_000)
+        await page.wait_for_timeout(2000)
 
         all_products = None
         if not force_dom:
-            all_products = await scrape_via_api(ctx)
+            all_products = await scrape_via_api(page)
 
         if all_products is None:
             if not force_dom:
@@ -451,7 +569,14 @@ async def main(save: bool = False, force_dom: bool = False):
                 print("!! If this persists the shop has closed /wp-json; the DOM")
                 print("!! path is slower and theme-coupled, so check it still parses.")
                 print("!" * 62 + "\\n")
-            all_products = await scrape_via_dom(ctx)
+            try:
+                all_products = await scrape_via_dom(page)
+            except Blocked as exc:
+                await browser.close()
+                # Exit non-zero. run_pipeline treats a failed scrape as non-fatal
+                # and moves on, which is right — but the category must be
+                # reported as failed, never loaded as a truncated list.
+                sys.exit(f"\\nFAILED: {{exc}}\\nRefusing to load a partial category.")
 
         await browser.close()
 
