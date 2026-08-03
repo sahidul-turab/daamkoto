@@ -43,6 +43,21 @@ R2_ENABLED = bool(os.getenv("R2_ACCESS_KEY_ID"))
 R2_BUCKET = os.getenv("R2_BUCKET", "daamkoto-images")
 R2_PUBLIC_BASE = (os.getenv("R2_PUBLIC_BASE") or "").rstrip("/")
 
+# Uploading to R2 without knowing the Worker's public base would store
+# cutout_path as "/cutouts/<hash>" — a relative path that resolves to nothing.
+# The table is the failure's memory: this script skips any source_url already in
+# image_cutouts, so a bad path is never retried and those images stay broken
+# forever. Refuse to start instead. (An environment with no R2 credentials at
+# all is fine — that is the local /media mode.)
+if R2_ENABLED and not R2_PUBLIC_BASE:
+    sys.exit(
+        "R2 credentials are set but R2_PUBLIC_BASE is not.\n"
+        "Cutout paths would be recorded as unusable relative URLs and, because "
+        "this script is idempotent, never regenerated.\n"
+        "Set R2_PUBLIC_BASE to the Worker origin (never the rate-limited "
+        "r2.dev host) — locally in .env.r2, in CI as a repository secret."
+    )
+
 _session = None
 _s3 = None
 

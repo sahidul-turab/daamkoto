@@ -162,7 +162,8 @@ def _finish_run(
 # Pipeline runner
 # ---------------------------------------------------------------------------
 
-def run_category(category: str, retailers: list[str], dry_run: bool = False) -> bool:
+def run_category(category: str, retailers: list[str], dry_run: bool = False,
+                 no_cutouts: bool = False) -> bool:
     """Run the pipeline for one category. Returns True on success."""
     log.info("▶  Starting: category=%s  retailers=%s", category, retailers)
 
@@ -179,6 +180,8 @@ def run_category(category: str, retailers: list[str], dry_run: bool = False) -> 
            "--retailers"] + retailers
     if dry_run:
         cmd.append("--dry-run")
+    if no_cutouts:
+        cmd.append("--no-cutouts")
 
     products_count = 0
     prices_count   = 0
@@ -299,6 +302,12 @@ def main() -> None:
         "--dry-run", action="store_true",
         help="Pass --dry-run to run_pipeline.py (no DB writes to products/prices)",
     )
+    parser.add_argument(
+        "--no-cutouts", action="store_true",
+        help="Skip per-category background removal. Used by CI, which runs the "
+             "cutout pass once at the end instead — only that job holds the R2 "
+             "credentials the uploads need.",
+    )
     args = parser.parse_args()
 
     categories = args.categories
@@ -315,7 +324,7 @@ def main() -> None:
 
     if args.once:
         failed = [cat for cat in categories
-                  if not run_category(cat, retailers, args.dry_run)]
+                  if not run_category(cat, retailers, args.dry_run, args.no_cutouts)]
         _evaluate_alerts(args.dry_run)
         if failed:
             # Exit non-zero so a CI run goes red. Previously every category could
@@ -334,7 +343,7 @@ def main() -> None:
         log.info("=== Sweep started ===")
 
         for cat in categories:
-            run_category(cat, retailers, args.dry_run)
+            run_category(cat, retailers, args.dry_run, args.no_cutouts)
 
         _evaluate_alerts(args.dry_run)
 

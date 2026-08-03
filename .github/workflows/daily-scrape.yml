@@ -98,7 +98,10 @@ jobs:
 
       - name: Scrape ${{ matrix.category }}
         run: |
-          ARGS="--once --categories ${{ matrix.category }}"
+          # --no-cutouts: background removal happens once in the report job.
+          # These matrix jobs deliberately do not hold the R2 credentials, and
+          # rembg without them writes local paths that resolve to nothing.
+          ARGS="--once --no-cutouts --categories ${{ matrix.category }}"
           if [ -n "${{ github.event.inputs.retailers }}" ]; then
             ARGS="$ARGS --retailers ${{ github.event.inputs.retailers }}"
           fi
@@ -122,11 +125,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    timeout-minutes: 120
     env:
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      # Without this, remove_backgrounds.py stores cutout_path as a relative
+      # "/cutouts/<hash>". It refuses to run rather than do that, so a missing
+      # secret fails the step loudly instead of silently breaking every image
+      # it touches — the table is idempotent and would never retry them.
+      R2_PUBLIC_BASE: ${{ secrets.R2_PUBLIC_BASE }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -143,6 +152,23 @@ jobs:
           fi
           python scripts/freshness_report.py $ARGS
 
+      # Cutouts run here, not per-category, for two reasons: this is the only
+      # job with R2 credentials, and rembg is a ~200 MB install that would
+      # otherwise be repeated across every category in the matrix.
+      - name: Install rembg
+        if: ${{ env.R2_ACCESS_KEY_ID != '' }}
+        run: pip install "rembg[cpu]" onnxruntime pillow
+
+      - name: Generate product cutouts
+        if: ${{ env.R2_ACCESS_KEY_ID != '' }}
+        # 4 workers matches the runner's vCPU count. The 6-worker ceiling noted
+        # in CLAUDE.md is a memory limit on the dev machine, not a target.
+        # --limit bounds a first run with a large backlog; the nightly delta is
+        # small once it has caught up.
+        run: python scripts/remove_backgrounds.py --workers 4 --limit 3000
+
+      # After cutouts, so the published snapshots carry the new image URLs
+      # rather than a set that is one day stale.
       - name: Publish fast-start product snapshots
         if: ${{ env.R2_ACCESS_KEY_ID != '' }}
         run: python scripts/export_bootstrap_snapshots.py --upload
