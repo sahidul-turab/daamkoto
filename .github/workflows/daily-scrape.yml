@@ -157,7 +157,10 @@ jobs:
       # otherwise be repeated across every category in the matrix.
       - name: Install rembg
         if: ${{ env.R2_ACCESS_KEY_ID != '' }}
-        run: pip install "rembg[cpu]" onnxruntime pillow
+        # Pins mirror requirements.txt. Keep them in step: this is the only
+        # place rembg is installed for CI, and a silent version drift here shows
+        # up as broken cutouts rather than a failed build.
+        run: pip install "rembg>=2.0.77" "onnxruntime>=1.27.0" "pillow>=10.0.0"
 
       - name: Generate product cutouts
         if: ${{ env.R2_ACCESS_KEY_ID != '' }}
