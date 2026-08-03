@@ -429,7 +429,11 @@ Or trigger a single run from the **Scraper** tab in the React frontend UI.
 - [ ] Remove or implement the dead `odd` category choice in run_pipeline.py
 - [ ] Move root-level one-off scripts (`probe_*.py`, `wipe_gpu.py`, `check_*.py`,
       17 MB `daamkoto_db_dump.sql`) into `scripts/archive/` or delete
-- [ ] First automated tests — start with `cleaning/normalize.py`
+- [x] First automated tests — `tests/test_normalize.py` (167 tests: match_key
+      identity, GPU chipset regressions, dispatcher coverage, cleaner output
+      contracts). Run with `python -m pytest tests/ -q`
+- [ ] Extend tests beyond `normalize.py` — `matcher.py` (union-find folding) and
+      `backend/queries.py` (the `_ALLOWED_SPEC_KEYS` allowlist) are next
 
 > Full roadmap with reasoning lives in [PRD.md §8](PRD.md#8-known-gaps--roadmap).
 

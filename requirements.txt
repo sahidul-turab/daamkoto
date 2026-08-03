@@ -29,3 +29,8 @@ pillow>=10.0.0
 
 # Utilities
 python-dotenv>=1.0.0
+
+# Tests. Dev-only — nothing in backend/, scrapers/ or cleaning/ imports pytest,
+# so deployment images can skip this line.
+#   python -m pytest tests/ -q
+pytest>=8.0.0

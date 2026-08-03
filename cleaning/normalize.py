@@ -21,7 +21,27 @@ import re
 import sys
 from pathlib import Path
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+def _force_utf8_stdout() -> None:
+    """Make stdout UTF-8 safe on Windows, without hijacking someone else's.
+
+    This module prints '→ ✓ ৳' and a Windows console defaults to cp1252, so the
+    wrapper has to exist — see the Windows-encoding trap in CLAUDE.md. But doing
+    it unconditionally at import time broke `pytest`: replacing sys.stdout drops
+    the last reference to the harness's own wrapper, Python closes the buffer
+    underneath it, and every later write raises "I/O operation on closed file".
+
+    So only wrap when stdout is real, not already UTF-8, and exposes a buffer.
+    Under pytest (or any capture), all three checks fail and stdout is left alone.
+    """
+    stream = sys.stdout
+    if stream is None or not hasattr(stream, "buffer"):
+        return
+    if (getattr(stream, "encoding", "") or "").lower().replace("-", "") == "utf8":
+        return
+    sys.stdout = io.TextIOWrapper(stream.buffer, encoding="utf-8", errors="replace")
+
+
+_force_utf8_stdout()
 
 # ---------------------------------------------------------------------------
 # Known RAM brand names
@@ -2211,6 +2231,41 @@ def print_summary(raw_records: list[dict], clean_records: list[dict], label: str
             print()
 
 
+# Category slug -> cleaner. Module level so tests (and any future caller) can
+# assert every pipeline category resolves to a real cleaner. A category missing
+# from here silently falls back to clean_record, the RAM cleaner, which produces
+# RAM-shaped specs for e.g. a monitor — wrong data, no error.
+#
+# `ram` is deliberately absent: clean_record *is* the RAM cleaner and is the
+# intended fallback for it.
+CLEANERS = {
+    "gpu":           clean_gpu_record,
+    "processor":     clean_processor_record,
+    "motherboard":   clean_motherboard_record,
+    "ssd":           clean_ssd_record,
+    "portable_ssd":  clean_portable_ssd_record,
+    "hdd":           clean_hdd_record,
+    "portable_hdd":  clean_portable_hdd_record,
+    "psu":           clean_psu_record,
+    "cooler":        clean_cooler_record,
+    "casing_cooler": clean_casing_cooler_record,
+    "casing":        clean_casing_record,
+    "odd":           clean_odd_record,
+    "monitor":       clean_monitor_record,
+    "laptop_ram":    clean_laptop_ram_record,
+    "keyboard":      clean_keyboard_record,
+    "mouse":         clean_mouse_record,
+    "headset":       clean_headset_record,
+    "ups":           clean_ups_record,
+    "speaker":       clean_speaker_record,
+    "webcam":        clean_webcam_record,
+    "gaming_chair":  clean_gaming_chair_record,
+    "printer":       clean_printer_record,
+    "mousepad":      clean_mousepad_record,
+    "gamepad":       clean_gamepad_record,
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Normalize raw scraper data")
     parser.add_argument("--input", type=Path, default=None,
@@ -2236,32 +2291,6 @@ def main():
     with open(input_path, encoding="utf-8") as f:
         raw_records = json.load(f)
 
-    CLEANERS = {
-        "gpu":           clean_gpu_record,
-        "processor":     clean_processor_record,
-        "motherboard":   clean_motherboard_record,
-        "ssd":           clean_ssd_record,
-        "portable_ssd":  clean_portable_ssd_record,
-        "hdd":           clean_hdd_record,
-        "portable_hdd":  clean_portable_hdd_record,
-        "psu":           clean_psu_record,
-        "cooler":        clean_cooler_record,
-        "casing_cooler": clean_casing_cooler_record,
-        "casing":        clean_casing_record,
-        "odd":           clean_odd_record,
-        "monitor":       clean_monitor_record,
-        "laptop_ram":    clean_laptop_ram_record,
-        "keyboard":      clean_keyboard_record,
-        "mouse":         clean_mouse_record,
-        "headset":       clean_headset_record,
-        "ups":           clean_ups_record,
-        "speaker":       clean_speaker_record,
-        "webcam":        clean_webcam_record,
-        "gaming_chair":  clean_gaming_chair_record,
-        "printer":       clean_printer_record,
-        "mousepad":      clean_mousepad_record,
-        "gamepad":       clean_gamepad_record,
-    }
     cleaner = CLEANERS.get(category, clean_record)
 
     # Build cleaned records, preserving the retailer's raw spec data separately.

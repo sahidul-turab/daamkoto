@@ -194,9 +194,15 @@ Speaker, Webcam, Gaming Chair, Printer, Mouse Pad, Gamepad.
 - [ ] Root directory holds one-off scripts from early exploration
       (`probe_*.py`, `wipe_gpu.py`, `rerun_all_fixed.py`, `check_*.py`) plus a
       17 MB `daamkoto_db_dump.sql`. Worth moving to `scripts/archive/` or deleting.
-- [ ] No automated test suite. Highest-value first target: `cleaning/normalize.py`,
-      which is 84 KB of regex-driven spec extraction and the single most
-      breakage-prone file in the project.
+- [x] First automated tests exist — `tests/test_normalize.py`, 167 tests over
+      `cleaning/normalize.py`, the most breakage-prone file in the project.
+      They cover `match_key` identity, the AMD RX 500-series chipset regression,
+      dispatcher coverage for all 24 categories, and the output contract every
+      cleaner owes the loader. `python -m pytest tests/ -q`
+- [ ] Extend coverage to `cleaning/matcher.py` (union-find folding — false
+      merges and false splits are its known failure modes) and to
+      `backend/queries.py`'s `_ALLOWED_SPEC_KEYS`, where a missing key silently
+      disables a filter.
 
 ## 9. Success metrics
 
