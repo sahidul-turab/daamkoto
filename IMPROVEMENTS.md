@@ -513,3 +513,56 @@ rather than poisoning the table, and the secret is set.
 that writes a durable record of its own success. `image_cutouts` is idempotent,
 which is what makes a bad row unrecoverable rather than merely wrong. Where a
 script records "done", it must be certain before it writes.
+
+---
+
+## 15. 2026-08-03 — extract_speed learned MT/s, and what that cost
+
+**Problem:** `extract_speed` only matched `MHz`. DDR5 is marketed in **MT/s**
+(`6000MT/s`), and JEDEC speed grades appear as `DDR5-6000`, so 194 of 2,950 RAM
+products (6.6%) had no speed at all. `match_key` is
+`brand_capacity_generation_speed`, so those products sat in a bucket like
+`corsair_32gb_ddr5` — wide enough to hold parts running at 5200, 6000 and 8000,
+leaving the fuzzy pass to separate things it should never have seen together.
+
+**Change:** `extract_speed` now understands all three notations and normalises
+them to `NNNNMHz`. MT/s is a transfer rate and is not literally the same
+quantity as MHz, but every retailer here uses the numbers interchangeably for
+the same part, and identity has to follow the listings rather than the spec
+sheet.
+
+**The change alone would have corrupted the catalogue.** `products` is
+`UNIQUE (match_key, name)`. Shipping a new key generator without moving the
+existing rows means the loader stops recognising them: it inserts a *second*
+product for the same stick, the original keeps its price history, and one
+product silently becomes two with half a chart each. Exactly the duplication the
+EZ Gadgets HTML-entity fix caused a few hours earlier (§13).
+
+So the code change shipped with `scripts/backfill_ram_speed_keys.py`, run
+against both local and Neon before the next scrape. It re-keys a row only when
+recomputing with the *old* speed logic reproduces exactly what is stored — proof
+the difference is this change and not some other drift — and aborts on any
+`UNIQUE (match_key, name)` collision.
+
+**Measured on production before applying:** 134 products re-keyed — 48 spelled
+MT/s, 86 a DDRx grade. 98 joined a bucket that already existed (the merge this
+was for; a `6000MT/s` stick meeting the `6000MHz` listings of the same part),
+36 formed a more precise bucket of their own, and **0 collided**. The `specs`
+column self-heals on the next load, since the loader's upsert carries
+`ON CONFLICT ... DO UPDATE SET specs = EXCLUDED.specs`.
+
+*Why it matters:* **changing how `match_key` is derived is a data migration, not
+a patch.** Any future edit to `build_match_key` or the extractors feeding it
+needs the same treatment: diff the keys against production first, check for
+collisions, move the existing rows, then ship the code.
+
+**Two unrelated defects the dry run surfaced,** both left alone deliberately
+because they are not this change's business:
+
+  * `extract_capacity` prefers TB over GB, so a bundle listing —
+    "…32GB DDR5 RAM **& CARDEA Z44Q 2TB SSD** Bundle" — reports the SSD's 2TB as
+    the RAM's capacity. 2 products.
+  * 247 of 43,384 product names (0.6%) are stored truncated with a trailing
+    ellipsis, mostly BinaryLogic, because the retailer's card markup truncates
+    long titles. The name is part of product identity, so a truncated one cannot
+    match the full name at another shop.

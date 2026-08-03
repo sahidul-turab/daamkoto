@@ -125,6 +125,31 @@ class TestGenerationSpeedLatency:
     def test_speed(self, name, expected):
         assert n.extract_speed(name) == expected
 
+    @pytest.mark.parametrize("name,expected", [
+        # MT/s — how DDR5 is actually marketed
+        ("CORSAIR VENGEANCE 32GB DDR5 6000MT/s CL36", "6000MHz"),
+        ("Kingston FURY Beast DDR5 5200 MT/s", "5200MHz"),
+        ("Team T-Force 32GB DDR5 6000 MT/S", "6000MHz"),
+        # JEDEC-style speed grade
+        ("G.Skill Trident Z5 DDR5-6000 CL30", "6000MHz"),
+        ("ADATA XPG DDR4 3200 BUS Gaming RAM", "3200MHz"),
+    ])
+    def test_speed_alternate_notations(self, name, expected):
+        """All three notations describe the same stick and must share a bucket."""
+        assert n.extract_speed(name) == expected
+
+    def test_mhz_wins_when_both_appear(self):
+        assert n.extract_speed("DDR5-6000 rated 6000MHz kit") == "6000MHz"
+
+    @pytest.mark.parametrize("name", [
+        "Corsair DDR4 16GB 2x8GB kit",          # no speed anywhere
+        "Cooler Master MWE 750 Bronze PSU",      # 750 is watts, not a DDR speed
+        "G.Skill F5-6000J3036F48GX2 Ripjaws",    # speed lives in the part number
+    ])
+    def test_speed_does_not_invent_a_number(self, name):
+        """The DDR-anchored branch must not grab an unrelated 3-5 digit number."""
+        assert n.extract_speed(name) is None
+
     def test_latency_is_uppercased(self):
         assert n.extract_latency("DDR5 cl30 kit") == "CL30"
 
@@ -310,12 +335,6 @@ class TestKnownGaps:
     a quiet patch. They are here so the gap is executable and measured, not
     folklore. Measured 2026-08-03 against production: 194 of 2,950 RAM products
     (6.6%) have no parsed speed; 47 of those say "MT/s" in the name."""
-
-    @pytest.mark.xfail(reason="extract_speed only matches MHz; DDR5 is usually "
-                              "specced in MT/s. 47 products affected.",
-                       strict=True)
-    def test_speed_should_understand_mt_s(self):
-        assert n.extract_speed("CORSAIR VENGEANCE 32GB DDR5 6000MT/s CL36") == "6000MHz"
 
     @pytest.mark.xfail(reason="extract_capacity misses bare kit notation: the "
                               "\\b before \\d+ cannot match inside '2x16GB'.",

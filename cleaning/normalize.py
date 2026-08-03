@@ -108,8 +108,41 @@ def extract_generation(name: str) -> str | None:
 
 
 def extract_speed(name: str) -> str | None:
+    """Memory speed, always normalised to the 'NNNNMHz' form.
+
+    Retailers write the same stick three ways, and all three have to land in one
+    match_key bucket or the same product splits across shops:
+
+        "DDR5 6000MHz"    the older convention
+        "DDR5 6000MT/s"   how DDR5 is actually marketed; Corsair, Kingston,
+                          G.Skill and Team all use it
+        "DDR5-6000"       the JEDEC-style speed grade
+
+    MT/s is the transfer rate and MHz here is really half that, so the two are
+    not the same physical quantity — but every retailer in this project uses the
+    numbers interchangeably for the same part, and identity has to follow the
+    listings rather than the spec sheet.
+
+    Before this understood MT/s and the speed-grade form, 194 of 2,950 RAM
+    products (6.6%) had no speed at all, which widened their bucket and left the
+    fuzzy pass to separate parts it should never have seen together.
+    """
     m = re.search(r"\b(\d{3,5})\s*[Mm]?[Hh][Zz]\b", name)
-    return f"{m.group(1)}MHz" if m else None
+    if m:
+        return f"{m.group(1)}MHz"
+
+    m = re.search(r"\b(\d{3,5})\s*MT\s*/?\s*s\b", name, re.IGNORECASE)
+    if m:
+        return f"{m.group(1)}MHz"
+
+    # "DDR5-6000" or "DDR4 3200". Anchored to the DDR generation so a stray
+    # four-digit number elsewhere in the name (a model number, a wattage) can
+    # never be read as a speed.
+    m = re.search(r"\bDDR[345][-\s](\d{4,5})\b", name, re.IGNORECASE)
+    if m:
+        return f"{m.group(1)}MHz"
+
+    return None
 
 
 def extract_latency(name: str) -> str | None:
