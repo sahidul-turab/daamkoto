@@ -54,6 +54,8 @@ KNOWN_RETAILERS = {
     "ComputerSource": "https://computersource.com.bd",
     "TrustTech":      "https://www.trusttechbd.com",
     "PCHouse":        "https://www.pchouse.com.bd",
+    "EZGadgets":      "https://ggezgadgets.com",
+    "VibeGaming":     "https://vibegaming.com.bd",
 }
 
 

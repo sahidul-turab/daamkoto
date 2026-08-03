@@ -310,6 +310,8 @@ export const RETAILER_COLORS: Record<string, string> = {
   ComputerSource: "#0ea5e9",
   TrustTech: "#84cc16",
   PCHouse: "#f59e0b",
+  EZGadgets: "#d946ef",
+  VibeGaming: "#6366f1",
 };
 
 export function retailerColor(name: string): string {

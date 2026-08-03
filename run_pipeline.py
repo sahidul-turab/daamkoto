@@ -47,6 +47,8 @@ ALL_RETAILERS = [
     "computersource",
     "trusttech",
     "pchouse",
+    "ezgadgets",
+    "vibegaming",
 ]
 
 

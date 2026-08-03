@@ -22,6 +22,7 @@ const ALL_RETAILERS = [
   "startech", "ryans", "techland", "potakait", "ucc",
   "ultratech", "binarylogic", "skyland", "creatus",
   "selltech", "computersource", "trusttech", "pchouse",
+  "ezgadgets", "vibegaming",
 ];
 
 // ---------------------------------------------------------------------------

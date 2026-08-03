@@ -65,6 +65,7 @@ _ALL_RETAILERS = [
     "startech", "ryans", "techland", "potakait", "ucc",
     "ultratech", "binarylogic", "skyland", "creatus",
     "selltech", "computersource", "trusttech", "pchouse",
+    "ezgadgets", "vibegaming",
 ]
 
 # In-process run registry — category → run_id
@@ -904,7 +905,7 @@ def trigger_run(req: RunRequest):
     Trigger a background pipeline run for one category.
 
     Returns 409 if a run for the same category is already in flight.
-    Retailers default to all 13 if not specified.
+    Retailers default to all 15 if not specified.
 
     Example body: {"category": "ram", "retailers": ["startech", "ryans"]}
     """

@@ -28,7 +28,19 @@ RETAILERS = {
     "computersource": ("https://computersource.com.bd",  ".product"),
     "trusttech":      ("https://www.trusttechbd.com",    ".product-card"),
     "pchouse":        ("https://www.pchouse.com.bd",     ".single-product-item"),
+    "ezgadgets":      ("https://ggezgadgets.com",        ".wd-product"),
+    "vibegaming":     ("https://vibegaming.com.bd",      "section.product[data-product_id]"),
 }
+
+# EZ Gadgets and Vibe Gaming are deliberately absent from CATEGORY_PATHS below.
+# Both are WooCommerce, so their paths are multi-segment
+# (/product-category/pc-components/graphics-card/) and both cover core components
+# as well as peripherals, so recording half of them here would leave two partial
+# sources of truth. Vibe Gaming additionally needs *several* listing URLs for one
+# category, which this file's category -> {retailer: path} shape cannot express.
+# Their full category maps live in scrapers/gen_ezgadgets_scrapers.py and
+# scrapers/gen_vibegaming_scrapers.py, which are also what generate their
+# scrapers.
 
 # category -> {retailer: path}. A retailer absent from a category either does
 # not stock it or has no browsable listing page; that is a scraper we do not

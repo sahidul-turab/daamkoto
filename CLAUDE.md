@@ -1,4 +1,14 @@
-# PC Component Price Comparison — Bangladesh
+# DaamKoto (দাম কত?) — PC Component Price Comparison, Bangladesh
+
+> **Agent operating manual.** This file holds the rules, workflows and traps.
+> Companion docs:
+> | Doc | Read it for |
+> |---|---|
+> | [README.md](README.md) | What this is, quickstart |
+> | [PRD.md](PRD.md) | Product scope, features, roadmap, known gaps |
+> | [ARCHITECTURE.md](ARCHITECTURE.md) | How every stage/module/table works |
+> | [IMPROVEMENTS.md](IMPROVEMENTS.md) | Why decisions were made (decision log) |
+> | [DEPLOY.md](DEPLOY.md) | Shipping changes, free-tier budget |
 
 ## Vision
 A website where Bangladeshi PC buyers can search for a component (e.g. RAM, GPU, SSD) and instantly see its price compared across multiple local retailers (StarTech, Ryans, Techland, and others). The user finds the cheapest source in one place instead of tab-hopping.
@@ -6,6 +16,13 @@ A website where Bangladeshi PC buyers can search for a component (e.g. RAM, GPU,
 **Edge over PCPartPickerBD**: an AI chatbot layer — users can ask in plain language ("find me 16GB DDR4 RAM under 4000 taka") and the bot translates that into a structured database query. The LLM understands; the database answers; the bot never invents prices.
 
 Also stores price history (append-only timestamps) so users can see how prices changed over time.
+
+**Live:** frontend on Vercel (https://daamkoto.vercel.app), API on Render
+(https://daamkoto-api.onrender.com), database on Neon. Scrapers run daily from
+GitHub Actions. Everything is free tier.
+
+**Scale today:** ~35,150 canonical products · ~146,000 price rows · 15 retailers
+· 24 live categories.
 
 ---
 
@@ -17,7 +34,7 @@ Also stores price history (append-only timestamps) so users can see how prices c
 
 ---
 
-## Retailers in scope (13 total)
+## Retailers in scope (15 total)
 1. **StarTech** — `startech.com.bd`
 2. **Ryans** — `ryans.com`
 3. **Techland BD** — `techlandbd.com`
@@ -27,14 +44,38 @@ Also stores price history (append-only timestamps) so users can see how prices c
 7. **BinaryLogic** — `binarylogic.com.bd`
 8. **Skyland** — `skyland.com.bd`
 9. **Creatus** — `creatus.com.bd`
-10. **SellTech** — `selltech.com.bd` (GPU only)
+10. **SellTech** — `selltech.com.bd` (GPU + peripherals only — 10 scrapers)
 11. **ComputerSource** — `computersource.com.bd`
 12. **TrustTech** — `trusttechbd.com`
-13. **PCHouse** — `pchouse.com.bd` (GPU only)
+13. **PCHouse** — `pchouse.com.bd` (GPU + peripherals only — 10 scrapers)
+14. **EZGadgets** — `ggezgadgets.com` (WooCommerce; peripherals-led — 14 scrapers)
+15. **VibeGaming** — `vibegaming.com.bd` (WooCommerce; 21 scrapers — no laptop
+    RAM, portable SSD or portable HDD listing)
+
+Coverage per retailer is uneven by design. The full `Y`/`.` matrix lives in
+[ARCHITECTURE.md](ARCHITECTURE.md#scraper-coverage-matrix).
 
 ---
 
-## Architecture (5 stages)
+## Categories in scope (24 live)
+
+**Core components (13):** `ram` (RAM Desktop), `laptop_ram`, `gpu`, `processor`,
+`motherboard`, `ssd`, `portable_ssd`, `hdd`, `portable_hdd`, `psu`,
+`cooler` (CPU Cooler), `casing_cooler`, `casing`
+
+**Peripherals & lifestyle (11):** `monitor`, `keyboard`, `mouse`,
+`headset` (shown as "Headphone"), `ups`, `speaker`, `webcam`, `gaming_chair`,
+`printer`, `mousepad`, `gamepad`
+
+> `odd` (optical drives) is still a `--category` choice in `run_pipeline.py` but
+> has **zero scrapers**. It is dead — don't treat it as a category.
+
+Note the slug/label mismatches: `ram` → "RAM DESKTOP", `cooler` → "CPU COOLER",
+`headset` → "HEADSET" (UI label "Headphone"), `mousepad` → "MOUSE PAD".
+
+---
+
+## Architecture (6 stages)
 
 ### Stage 1 — Scrapers (`scrapers/`)
 One Python file per retailer per category. Uses **Playwright** (JS-rendered pages).
@@ -75,16 +116,46 @@ Endpoints:
 - `POST /build/plan` — AI build-from-budget
 - `POST /build/check` — compatibility check for a set of part IDs
 - `POST /alerts` — create a price-drop alert; `GET /alerts` — list; `DELETE /alerts/{id}`
+- `GET /alerts/triggered` — alerts whose target price was hit
 - `GET /scrapers/status` — freshness, run history, log tail
 - `POST /scrapers/run` — trigger a background pipeline run (concurrency-safe)
 
+19 endpoints total, plus a `/media` StaticFiles mount for locally-served cutouts.
+
+**AI providers** (`backend/llm.py`) — Groq `llama-3.3-70b-versatile` (fast lane)
+and Google Gemini `gemini-2.0-flash` (reasoning lane), both free tier, with
+automatic fallback. **This project does not use the Anthropic API.**
+
+The agent (`backend/agent.py`) may only speak through six tools in
+`backend/tools.py`: `search_products`, `get_product_details`, `get_price_history`,
+`check_compatibility`, `plan_build`, `get_deals`. Add a *tool* to add a
+capability — never loosen the prompt. A hallucinated price is a P0 bug.
+
 ### Stage 5 — Frontend (`frontend-react/`)
-**React + Vite + Tailwind CSS v4** premium dark UI. Three views:
+**React 18 + Vite 6 + Tailwind CSS v4** premium dark UI. Four views
+(`browse | build | deals | scraper`):
 - **Browse** — category tabs, filter sidebar, product grid with price-age badges
-- **Build** — PC parts assembly studio with compatibility check and cost estimate
+- **Build** — PC parts assembly studio, compatibility check, wattage gauge, 3D rig preview
+- **Deals** — biggest recent price drops, computed from price history
 - **Scraper** — health dashboard (freshness grid, run history, manual trigger, log console)
 
-> The old Streamlit frontend has been removed. `frontend-react/` is the only frontend.
+Plus overlays: product drawer, chatbot, ⌘K command palette, watchlist panel — all
+lazy-loaded.
+
+> The old Streamlit frontend has been **removed**. `frontend-react/` is the only
+> frontend. Ignore any doc that calls Streamlit a "fallback".
+
+### Stage 6 — Product images (`scripts/`)
+Retailer photos have a white background baked in, which looks broken on the dark
+UI. `scripts/remove_backgrounds.py` runs **rembg** → transparent PNG → uploads to
+**Cloudflare R2** → serves via a Worker, recording source URL → cutout path in the
+`image_cutouts` table. `run_pipeline.py` calls it automatically after load
+(non-fatal); skip with `--no-cutouts`.
+
+> ⚠️ **rembg OOMs above 6 workers on this machine and fails silently.** Keep `--workers 6`.
+
+> ⚠️ **Never serve from `r2.dev`** — aggressively rate-limited. Always use the
+> Worker (`scripts/r2_image_worker.js`).
 
 ---
 
@@ -98,7 +169,7 @@ each is easy to break by accident.
 `frontend-react/src/App.tsx` lazy-loads every view except Browse, and every
 overlay (drawer, chatbot, palette, watchlist). Those are the only consumers of
 **framer-motion**, and the product drawer is the only path to **recharts** —
-so both stay out of the entry chunk. Critical-path JS is ~64 kB gzipped.
+so both stay out of the entry chunk. Critical-path JS is ~68.5 kB gzipped.
 
 > ⚠️ **Do not add `manualChunks` back to `vite.config.ts`.** Forcing `recharts` /
 > `framer-motion` into named chunks makes Vite emit `<link rel="modulepreload">`
@@ -123,8 +194,9 @@ connection (`with database.get_db() as conn`), because it may run on a
 background thread after the request has returned.
 
 ### 3. Startup warmup — `_warm_caches()` in `backend/main.py`
-Pre-loads page 1 of all 13 categories at boot, so the first visitor after a
-deploy gets a cache hit (~4 ms) instead of a cold aggregation.
+Pre-loads page 1 of every category in `_WARM_CATEGORIES` at boot, so the first
+visitor after a deploy gets a cache hit (~4 ms) instead of a cold aggregation.
+(The list mirrors all 24 live categories.)
 
 > ⚠️ The warm keys must match what the frontend actually requests. If you change
 > `PAGE_SIZE` in `frontend-react/src/config.ts` or `sort` in
@@ -132,6 +204,9 @@ deploy gets a cache hit (~4 ms) instead of a cold aggregation.
 > — otherwise the warmup fills keys nobody asks for and every visitor is slow
 > again. Verify with `GET /health?deep=1` (`cache_warm` should be non-zero) and
 > by timing a first request after a restart.
+
+`cache_warm` is `len(_WARM_CATEGORIES) × len(_WARM_SORTS)` — 48 product-list
+entries after a complete warmup.
 
 ### 4. Client cache — `frontend-react/src/lib/swr.ts`
 Memory + `sessionStorage`, keyed by request URL, with in-flight de-duplication.
@@ -143,11 +218,18 @@ Prefetching (`src/lib/prefetch.ts`): the next page loads while you read the
 current one, category tabs prefetch on pointer-enter, and remaining categories
 warm on idle — skipped entirely when the browser reports Save-Data or 2G.
 
-### 5. Keep-warm — `.github/workflows/keep-warm.yml`
+### 5. Edge bootstrap snapshots — R2 / Worker
+`scripts/export_bootstrap_snapshots.py` queries PostgreSQL directly after the
+daily scrape and publishes page 1 for every category and both default sorts.
+`useProductSearch` races the snapshot with the API, paints the first result, and
+lets the live API replace it. This is the guaranteed first-paint path when
+Render/Neon are cold; the LLM is not involved and every value is still a DB row.
+
+### 6. Keep-warm — `.github/workflows/keep-warm.yml`
 Render free spins down after ~15 min idle (30–50 s cold start) and Neon suspends
 an idle database. A cron pings `/health?deep=1` during Bangladesh waking hours
-(00:00–20:00 UTC), which touches Postgres too. See DEPLOY.md for the free-tier
-hour budget.
+(00:00–20:00 UTC), which touches Postgres too. GitHub schedules are best-effort
+and have been delayed by hours, so first paint must never depend on this job.
 
 ### Query rules
 - `search_products` returns its total via `COUNT(*) OVER ()` in the same query —
@@ -168,11 +250,27 @@ grep -E "modulepreload|<script" dist/index.html
 
 ---
 
-### Stage 5b — Scraper Automation (`scheduler.py`)
-Background daemon that cycles through all 13 categories in round-robin order.
+### Stage 5b — Scraper Automation (`scheduler.py` + GitHub Actions)
+`scheduler.py` is a background daemon that cycles through all **24** categories
+in round-robin order.
 - Logs to `logs/scheduler.log` (also readable from the Scraper dashboard)
-- Records every run in `scraper_runs` PostgreSQL table
+- Records every run in the `scraper_runs` PostgreSQL table
 - FastAPI backend can also trigger runs via `POST /scrapers/run`
+
+**In production the daily refresh runs on GitHub Actions, not on a local machine:**
+
+| Workflow | Schedule | Purpose |
+|---|---|---|
+| `.github/workflows/daily-scrape.yml` | 20:00 UTC (02:00 Dhaka) | Full sweep → Neon + publish R2 fast-start snapshots |
+| `.github/workflows/keep-warm.yml` | Every 10 min, 00:00–20:00 UTC | Keep Render + Neon awake |
+| `.github/workflows/weekly-backup.yml` | Sun 21:00 UTC | `pg_dump` → 90-day artifact |
+
+> ⚠️ **Do not raise `max-parallel: 4` in `daily-scrape.yml` to speed it up.**
+> Every category hits the same 15 shops, so N parallel jobs is N× the request
+> rate at each retailer. The scrapers sleep 2–3 s between pages precisely to stay
+> polite; four keeps a sweep near an hour while no shop sees more than four
+> concurrent crawlers. (Sequentially a sweep measured 4 h 02 m against GitHub's
+> 6 h job ceiling — that's why parallelism exists at all.)
 
 ---
 
@@ -188,6 +286,11 @@ Background daemon that cycles through all 13 categories in round-robin order.
 | Charts | Recharts |
 | Animations | Framer Motion |
 | AI agent | Groq llama-3.3-70b (fast) + Gemini 2.0 Flash (reasoning) — both free |
+| 3D rig preview | three.js + @react-three/fiber + drei |
+| Icons | lucide-react |
+| Background removal | rembg (product image cutouts) |
+| Image hosting | Cloudflare R2 + Worker |
+| Hosting | Vercel (web) · Render (API) · Neon (Postgres) · GitHub Actions (cron) |
 | Env config | python-dotenv |
 | Virtual env | `venv/` (always activate before running Python) |
 
@@ -214,25 +317,26 @@ The API docs (Swagger UI) are at `http://localhost:8000/docs`.
 
 ## Database migrations (run once manually)
 
+There is a helper — no need for `psql` on PATH:
+
 ```bash
-# Use the Python helper (psql not required in PATH):
-python -c "
-import os; from dotenv import load_dotenv; import psycopg2
-load_dotenv()
-conn = psycopg2.connect(host=os.getenv('DB_HOST','localhost'), port=int(os.getenv('DB_PORT','5432')), dbname=os.getenv('DB_NAME','pc_comparison'), user=os.getenv('DB_USER','postgres'), password=os.getenv('DB_PASSWORD',''))
-conn.autocommit = True
-cur = conn.cursor()
-cur.execute(open('database/migration_v5_scraper_runs.sql').read())
-print('Done!')
-conn.close()
-"
+python scripts/apply_migration.py database/migration_v10_image_cutouts.sql
 ```
 
 Migration files (apply in order):
 1. `database/schema.sql` — base schema (already applied)
-2. `database/migration_v3_stock_status.sql`
-3. `database/migration_v4_pc_bundle_only.sql`
-4. `database/migration_v5_scraper_runs.sql` — scraper run history table
+2. `database/perf_indexes.sql`, `perf_indexes_v2.sql` — performance indexes
+3. `database/migration_v3_stock_status.sql` — in_stock / out_of_stock / upcoming / bundle_only
+4. `database/migration_v4_pc_bundle_only.sql` — "only with PC build" flag
+5. `database/migration_v5_scraper_runs.sql` — scraper run history table
+6. `database/migration_v6_alerts.sql` — price-drop alerts ⚠️ *verify applied to prod Neon*
+7. `database/migration_v7_cheapest_listing.sql` — pick cheapest when a retailer duplicates a product
+8. `database/migration_v8_expire_dead_listings.sql` — stop counting listings a retailer dropped
+9. `database/migration_v9_product_image.sql` — per-listing `image_url`
+10. `database/migration_v10_image_cutouts.sql` — `image_cutouts` (source URL → cutout path)
+
+Nothing auto-migrates at startup. After any load, refresh the materialized view:
+`python database/refresh_mv.py`.
 
 ---
 
@@ -245,7 +349,7 @@ python scheduler.py --once
 # Run specific categories / retailers:
 python scheduler.py --once --categories ram gpu --retailers startech ryans
 
-# Full daemon mode (sweeps all 13 categories every 12 hours):
+# Full daemon mode (sweeps all 24 categories every 12 hours):
 python scheduler.py
 
 # Custom interval:
@@ -279,6 +383,9 @@ Or trigger a single run from the **Scraper** tab in the React frontend UI.
 - [x] Expanded to 13 categories (RAM Desktop, RAM Laptop, GPU, Processor, Motherboard, SSD, Portable SSD, HDD, Portable HDD, PSU, CPU Cooler, Casing Cooler, Casing)
 - [x] New scrapers: Ryans, Techland, UCC, UltraTech, BinaryLogic, PotakaIT (all categories)
 - [x] 6 new retailers: Skyland, Creatus, SellTech, ComputerSource, TrustTech, PCHouse
+- [x] VibeGaming (`vibegaming.com.bd`) — 15th retailer, 21 categories; first
+      WooCommerce shop with a generator of its own
+      (`scrapers/gen_vibegaming_scrapers.py`)
 - [x] database/load.py + run_pipeline.py updated for 13 retailers
 - [x] GPU segmentation bug fixed — AMD RX 500-series 3-digit chipsets
 - [x] Full category scrapers for Skyland + Creatus (gen_opencart_scrapers.py)
@@ -299,10 +406,29 @@ Or trigger a single run from the **Scraper** tab in the React frontend UI.
       gzip + Cache-Control, single-query product search, client SWR cache +
       prefetching, code splitting (225 kB → 64 kB gzip critical path),
       keep-warm cron against Render/Neon cold starts
-- [ ] Apply migration_v6_alerts.sql to populate alerts table
-- [ ] Run pipeline for all categories across all 13 retailers to fully populate DB
-- [ ] Techland scrapers for remaining categories (casing, laptop_ram, portable_hdd, portable_ssd)
-- [ ] StarTech scrapers for new categories (laptop_ram, casing_cooler, portable_hdd, portable_ssd)
+- [x] Rebrand to DaamKoto; deployed live (Vercel + Render + Neon), all free tier
+- [x] Data-correctness fixes: dead-listing expiry (v8), cheapest-of-duplicates (v7),
+      freshness scoped to the retailers a run actually covered
+- [x] Automated daily refresh on GitHub Actions (matrix, max-parallel 4) → Neon
+- [x] Weekly database backup workflow (history cannot be re-scraped)
+- [x] Expanded 13 → 24 categories (monitor, keyboard, mouse, headphone, UPS,
+      speaker, webcam, gaming chair, printer, mouse pad, gamepad)
+- [x] Product images: rembg cutouts → Cloudflare R2 → Worker; automated in pipeline
+      (migrations v9 + v10)
+- [x] Multi-select filters, numeric-sorted options, previously-dead spec keys wired up
+- [x] Ryans URL fix (extract from card anchor) + self-driving backfill script
+- [x] Pipeline UTF-8 safe on Windows; loaders DSN/Neon aware
+- [x] 3D rig preview in Build studio (three.js / react-three-fiber)
+- [x] `_WARM_CATEGORIES` mirrors all 24 categories; 48 default product pages warm
+- [x] Edge bootstrap snapshots make first paint independent of Render/Neon cold starts
+- [ ] Verify migration_v6_alerts.sql is applied to production Neon
+- [ ] Fill scraper coverage gaps: `gamepad` (6 retailers), `mousepad` (6), `webcam` (4)
+- [ ] Remove or implement the dead `odd` category choice in run_pipeline.py
+- [ ] Move root-level one-off scripts (`probe_*.py`, `wipe_gpu.py`, `check_*.py`,
+      17 MB `daamkoto_db_dump.sql`) into `scripts/archive/` or delete
+- [ ] First automated tests — start with `cleaning/normalize.py`
+
+> Full roadmap with reasoning lives in [PRD.md §8](PRD.md#8-known-gaps--roadmap).
 
 ---
 
@@ -346,8 +472,14 @@ CATEGORIES = [
 ```
 
 ### 5. Add spec keys — `backend/queries.py`
-Add every filterable spec key from your cleaner to `_ALLOWED_SPEC_KEYS` (line ~22).
-These are the keys the API will accept as filter params. Omitting them silently blocks filtering.
+Add every filterable spec key from your cleaner to `_ALLOWED_SPEC_KEYS` (currently
+**71 keys**). These are the keys the API will accept as filter params.
+
+> ⚠️ **This is the step that gets forgotten.** A key missing from the allowlist is
+> **silently ignored** — the filter renders, the user clicks it, and nothing
+> changes. A dead filter looks identical to a filter with no matches. This has
+> already happened once (fixed 2026-07-26).
+
 ```python
 _ALLOWED_SPEC_KEYS = {
     ...,
@@ -369,13 +501,16 @@ Add a `CategoryDef` entry to the `CATEGORIES` array:
 {
   label: "Your Category",
   db: "YOUR NEW CATEGORY DB NAME",   // must match run_pipeline.py db_category value
-  icon: "🖥️",
+  icon: "Monitor",                   // lucide-react component name — NOT an emoji
   filters: [
     { kind: "select", param: "spec_key", label: "Label", specKey: "spec_key", fallback: ["Val1","Val2"] },
     { kind: "bool",   param: "has_feature", label: "Has Feature" },
   ],
 },
 ```
+`icon` is a **lucide-react component name** (`"MemoryStick"`, `"Gamepad2"`,
+`"BatteryCharging"`…), resolved by `components/Icon.tsx`. Emoji will not render.
+
 Also add a color to `RETAILER_COLORS` if this doesn't already exist (it's per retailer, not category — skip if the retailers are already there).
 
 ### 8. Add to dashboard trigger list — `frontend-react/src/components/ScraperDashboard.tsx`
@@ -386,10 +521,25 @@ const ALL_CATEGORIES = [
 ];
 ```
 
-### 9. Update CLAUDE.md
-- Add to **Retailers in scope** (if categories were limited per retailer)
-- Add to **Build order checklist**
-- Mark incomplete scrapers under remaining items
+### 9. Add to the cache warmup — `backend/main.py`
+```python
+_WARM_CATEGORIES = [
+    "RAM DESKTOP", ..., "CASING",
+    "YOUR NEW CATEGORY DB NAME",   # ← add here (DB name, not slug)
+]
+```
+Skip this and the category's first visitor after every deploy pays a full cold
+aggregation. This step was missed for all 11 peripheral categories — see the
+Known gap note in the Performance section.
+
+### 10. Add to the daily scrape workflow — `.github/workflows/daily-scrape.yml`
+The matrix reads the category list; confirm the new slug is included so the
+nightly refresh actually covers it.
+
+### 11. Update the docs
+- `CLAUDE.md` — categories list + build order
+- `PRD.md` — scope (§5.2) if it changes what the product covers
+- `ARCHITECTURE.md` — the scraper coverage matrix
 
 ### Quick checklist for a new category
 ```
@@ -397,11 +547,13 @@ const ALL_CATEGORIES = [
 [ ] cleaning/normalize.py                     — clean_{category}_record() + dispatcher
 [ ] run_pipeline.py                           — choices list + db_category dict
 [ ] scheduler.py                              — CATEGORIES list
-[ ] backend/queries.py                        — _ALLOWED_SPEC_KEYS
+[ ] backend/queries.py                        — _ALLOWED_SPEC_KEYS  ← silently breaks filters if missed
 [ ] backend/main.py                           — Query params in GET /products + _SPEC_KEYS in /chat
-[ ] frontend-react/src/config.ts              — CATEGORIES array (CategoryDef)
+[ ] backend/main.py                           — _WARM_CATEGORIES    ← silently costs cold starts if missed
+[ ] frontend-react/src/config.ts              — CATEGORIES array (CategoryDef, lucide icon name)
 [ ] frontend-react/src/components/ScraperDashboard.tsx — ALL_CATEGORIES list
-[ ] CLAUDE.md                                 — build order + notes
+[ ] .github/workflows/daily-scrape.yml        — matrix category list
+[ ] CLAUDE.md + PRD.md + ARCHITECTURE.md      — docs
 ```
 
 ---
@@ -525,3 +677,30 @@ The display name in `load.py` and the scraper's `source` field **must match exac
 - All timestamps are UTC
 - Always activate `venv/` before running any Python command
 - All migrations are applied manually (no auto-migrate at startup)
+- Use `127.0.0.1`, never `localhost` — IPv6-first resolution on Windows adds
+  ~200 ms per connection
+- Prices are **append-only**: never write `UPDATE` or `DELETE` against `prices`
+
+---
+
+## Traps — read before changing these areas
+
+Every one of these has already cost real debugging time. They share a pattern:
+**nothing raises an error.**
+
+| Area | Trap |
+|---|---|
+| **Bundling** | Adding `manualChunks` to `vite.config.ts`, or statically importing a lazy component into the Browse path, silently puts ~190 kB gzip back on the critical path. Verify: `npm run build && grep modulepreload dist/index.html` |
+| **Spec filters** | A key missing from `_ALLOWED_SPEC_KEYS` is ignored — the filter renders and does nothing |
+| **Cache warmup** | `_WARM_CATEGORIES` / `_WARM_PAGE_SIZE` / `_WARM_SORTS` must mirror the frontend, or the warmup fills keys nobody requests |
+| **Cache loaders** | A loader passed to `cache.get_or_load` **must open its own connection** — it can run on a background thread after the request returned |
+| **Unbounded query** | `/products` with neither `category` nor `search` scans the whole catalogue. `useProductSearch` refuses it; keep that guard |
+| **Ryans / Cloudflare** | Needs a **fresh browser context per page**. Reusing one context re-triggers the challenge. `curl`/`requests` are rate-limited too — backfills must use Playwright |
+| **Scraper field loss** | A scraper returning *fewer fields* still "succeeds". Ryans dropped `product_slug` and every URL became NULL with no error |
+| **rembg** | OOMs above 6 workers on this machine and fails silently. Keep `--workers 6` |
+| **R2** | Never serve from `r2.dev` (rate-limited). Always go through the Worker |
+| **Bootstrap snapshots** | Store plain JSON in R2. Pre-gzipping plus `Content-Encoding: gzip` gets double-compressed by Cloudflare and breaks `response.json()` |
+| **Crawl rate** | Don't raise `max-parallel: 4` in `daily-scrape.yml`, and don't shorten the 2–3 s page sleep. Getting blocked ends the product |
+| **Dead listings** | Migration v8 stops expired listings counting as current. They were winning the headline price on 41% of GPUs. Preserve expiry in any change to "current price" logic |
+| **Windows encoding** | The pipeline prints `→ ✓ ৳`; consoles default to cp1252. `run_pipeline.py` forces UTF-8 for itself and children — don't remove that |
+| **AI honesty** | The agent may only speak through the six tools in `tools.py`. Add a tool, never loosen the prompt. A hallucinated price is a P0 bug |

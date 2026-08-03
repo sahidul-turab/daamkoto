@@ -8,7 +8,7 @@
 # sweep measured 4h02m, which left no room to add categories before hitting
 # GitHub's 6h job ceiling.
 #
-# max-parallel is deliberately low. Every category hits the same 13 retailers,
+# max-parallel is deliberately low. Every category hits the same 15 retailers,
 # so N parallel jobs means N times the request rate at each shop - the scrapers
 # sleep 2-3s between pages precisely to stay polite, and running 13 at once
 # would throw that away and invite a block. Four keeps a full sweep near an
@@ -32,7 +32,7 @@ on:
         required: false
         default: ""
       retailers:
-        description: "Space-separated retailers (blank = all 13)"
+        description: "Space-separated retailers (blank = all 15)"
         required: false
         default: ""
 

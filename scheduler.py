@@ -46,6 +46,7 @@ ALL_RETAILERS = [
     "startech", "ryans", "techland", "potakait", "ucc",
     "ultratech", "binarylogic", "skyland", "creatus",
     "selltech", "computersource", "trusttech", "pchouse",
+    "ezgadgets", "vibegaming",
 ]
 
 
@@ -283,12 +284,12 @@ def main() -> None:
     parser.add_argument(
         "--categories", nargs="+", choices=CATEGORIES, default=CATEGORIES,
         metavar="CATEGORY",
-        help="Categories to schedule (default: all 13)",
+        help="Categories to schedule (default: all 24)",
     )
     parser.add_argument(
         "--retailers", nargs="+", choices=ALL_RETAILERS, default=ALL_RETAILERS,
         metavar="RETAILER",
-        help="Retailers to include (default: all 13)",
+        help="Retailers to include (default: all 15)",
     )
     parser.add_argument(
         "--once", action="store_true",
