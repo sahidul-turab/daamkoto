@@ -501,8 +501,22 @@ Idempotent and safe to re-run. `run_pipeline.py` invokes it automatically after
 load (`fatal=False`, so a cutout hiccup never blocks a price update); skip with
 `--no-cutouts`.
 
+**Where it runs.** Locally, per category, straight from `run_pipeline.py`. In CI
+it runs **once in the `report` job** of `daily-scrape.yml`, after every category
+has loaded and before the bootstrap snapshots are published, so those snapshots
+carry the new image URLs. The scrape matrix jobs pass `--no-cutouts`: they hold
+no R2 credentials, and rembg without them writes `/media` paths that exist only
+on an ephemeral runner. Until 2026-08-03 the scrape jobs simply lacked rembg, so
+CI produced no cutouts at all and said nothing — `fatal=False` made it silent.
+
 > ⚠️ **rembg OOMs above 6 workers on this machine** and fails silently. Keep
-> `--workers 6`.
+> `--workers 6` locally. That ceiling is dev-machine memory, not a target — CI
+> uses 4, matching the runner's vCPUs.
+
+> ⚠️ **R2 credentials without `R2_PUBLIC_BASE`** store `cutout_path` as a
+> relative `/cutouts/<hash>`. Because `image_cutouts` is idempotent, every image
+> written that way is broken permanently. `remove_backgrounds.py` exits rather
+> than run in that state.
 
 > ⚠️ **Never serve from `r2.dev`** — it is aggressively rate-limited. Always go
 > through the Worker (`scripts/r2_image_worker.js`).

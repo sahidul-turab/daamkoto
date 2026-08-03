@@ -699,6 +699,8 @@ Every one of these has already cost real debugging time. They share a pattern:
 | **Scraper field loss** | A scraper returning *fewer fields* still "succeeds". Ryans dropped `product_slug` and every URL became NULL with no error |
 | **rembg** | OOMs above 6 workers on this machine and fails silently. Keep `--workers 6` |
 | **R2** | Never serve from `r2.dev` (rate-limited). Always go through the Worker |
+| **Cutout paths** | R2 credentials without `R2_PUBLIC_BASE` store `cutout_path` as a relative `/cutouts/<hash>` that resolves to nothing — and `image_cutouts` is idempotent, so those images are never retried. `remove_backgrounds.py` now refuses to start in that state; keep the guard, and keep the secret set in CI |
+| **Cutouts in CI** | They run once in the **report** job, not per category. Only that job holds the R2 secrets — running rembg in a scrape job writes local paths on an ephemeral runner. Scrape jobs pass `--no-cutouts` |
 | **Bootstrap snapshots** | Store plain JSON in R2. Pre-gzipping plus `Content-Encoding: gzip` gets double-compressed by Cloudflare and breaks `response.json()` |
 | **Crawl rate** | Don't raise `max-parallel: 4` in `daily-scrape.yml`, and don't shorten the 2–3 s page sleep. Getting blocked ends the product |
 | **Dead listings** | Migration v8 stops expired listings counting as current. They were winning the headline price on 41% of GPUs. Preserve expiry in any change to "current price" logic |
