@@ -1,3 +1,23 @@
+> # ⚠️ SUPERSEDED — HISTORICAL SNAPSHOT (May 2026)
+>
+> **Do not use this file as a source of truth.** It was written before the
+> project was renamed to **DaamKoto**, deployed, and roughly doubled in scope.
+> "PriceBeam" was a working name that never shipped.
+>
+> Known-wrong claims below: the project name; "13 categories" (now **24**);
+> pre-deployment status (now live on Vercel + Render + Neon); no mention of
+> product images, GitHub Actions automation, the agentic AI tool loop, the
+> performance pass, or migrations v7–v10.
+>
+> **Current docs:** [README](README.md) · [PRD](PRD.md) ·
+> [ARCHITECTURE](ARCHITECTURE.md) · [IMPROVEMENTS](IMPROVEMENTS.md) ·
+> [CLAUDE.md](CLAUDE.md)
+>
+> Kept only as a record of how the project was assessed at that point — several
+> items it recommended were subsequently built.
+
+---
+
 # PriceBeam — Project Review & Improvement Roadmap
 
 ## What's Been Built (Status Quo)

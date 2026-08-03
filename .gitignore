@@ -51,3 +51,6 @@ backend/media/cutouts/
 
 # Neon production DB (never commit)
 .env.neon
+
+# Google Drive sync temp dir (54MB of chunk files, never ours)
+.tmp.driveupload/

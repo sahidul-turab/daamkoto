@@ -62,10 +62,10 @@ over clever ones.
 
 ## 5. Scope
 
-### 5.1 Retailers — 14, all live
+### 5.1 Retailers — 15, all live
 
 StarTech, Ryans, Techland BD, PotakaIT, UCC, UltraTech, BinaryLogic, Skyland,
-Creatus, SellTech, ComputerSource, TrustTech, PCHouse, EZGadgets.
+Creatus, SellTech, ComputerSource, TrustTech, PCHouse, EZGadgets, VibeGaming.
 
 Coverage is deliberately uneven: **SellTech** and **PCHouse** are peripheral-and-
 GPU shops, and **EZGadgets** is peripherals-led with a thin core-component

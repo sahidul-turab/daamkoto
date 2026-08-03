@@ -254,7 +254,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="DaamKoto API",
-    description="Compare PC part prices across 13 Bangladeshi retailers",
+    description="Compare PC part prices across 15 Bangladeshi retailers",
     version="0.1.0",
     lifespan=lifespan,
 )

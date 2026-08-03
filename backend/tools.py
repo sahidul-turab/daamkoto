@@ -27,7 +27,7 @@ TOOLS: list[dict] = [
             "description": (
                 "Search the live product database for PC components. "
                 "Call this whenever the user asks about prices, products, or wants to find parts. "
-                "Returns matching products with current prices from all 13 Bangladeshi retailers."
+                "Returns matching products with current prices from all 15 Bangladeshi retailers."
             ),
             "parameters": {
                 "type": "object",

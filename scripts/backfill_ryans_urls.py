@@ -87,6 +87,16 @@ def dsn(force_neon: bool) -> str | None:
             or dotenv_values(str(ROOT / ".env.neon")).get("NEON_URL"))
 
 
+def connect(target: str):
+    """Fresh connection with TCP keepalives. Kept short-lived: Neon drops a
+    connection left idle through a multi-minute scrape, so we never hold one
+    across scraping — only during a category's quick UPDATE phase."""
+    return psycopg2.connect(
+        target, keepalives=1, keepalives_idle=30,
+        keepalives_interval=10, keepalives_count=5,
+    )
+
+
 def sh(cmd: list[str], timeout: int = 2400) -> subprocess.CompletedProcess:
     return subprocess.run([PY_EXE] + cmd, env=CHILD_ENV, capture_output=True,
                           text=True, encoding="utf-8", errors="replace",

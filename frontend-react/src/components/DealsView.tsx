@@ -1,7 +1,7 @@
 /**
  * DealsView — daily AI-curated price-drop feed.
  *
- * Shows the biggest recent price drops across all 13 retailers.
+ * Shows the biggest recent price drops across all 15 retailers.
  * Each card opens the ProductDrawer for full details + all retailer prices.
  */
 import { useEffect, useState } from "react";
@@ -65,7 +65,7 @@ export function DealsView({ onOpenProduct }: Props) {
           <div>
             <h1 className="text-xl font-bold">Daily Deals</h1>
             <p className="text-sm text-ink-3">
-              Biggest price drops across all 13 retailers — updated after every scrape
+              Biggest price drops across all 15 retailers — updated after every scrape
             </p>
           </div>
         </div>
