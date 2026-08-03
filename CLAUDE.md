@@ -421,7 +421,10 @@ Or trigger a single run from the **Scraper** tab in the React frontend UI.
 - [x] 3D rig preview in Build studio (three.js / react-three-fiber)
 - [x] `_WARM_CATEGORIES` mirrors all 24 categories; 48 default product pages warm
 - [x] Edge bootstrap snapshots make first paint independent of Render/Neon cold starts
-- [ ] Verify migration_v6_alerts.sql is applied to production Neon
+- [x] Verified migration_v6_alerts.sql **is** applied to production Neon
+      (2026-08-03): `alerts` table present with the full column set, and
+      `GET /alerts` / `GET /alerts/triggered` both return 200 against it.
+      Alerts are live, not inert — 0 rows only because nobody has created one.
 - [ ] Fill scraper coverage gaps: `gamepad` (6 retailers), `mousepad` (6), `webcam` (4)
 - [ ] Remove or implement the dead `odd` category choice in run_pipeline.py
 - [ ] Move root-level one-off scripts (`probe_*.py`, `wipe_gpu.py`, `check_*.py`,

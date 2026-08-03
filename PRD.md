@@ -138,8 +138,10 @@ Speaker, Webcam, Gaming Chair, Printer, Mouse Pad, Gamepad.
 - `POST /alerts` create · `GET /alerts` list · `DELETE /alerts/{id}` ·
   `GET /alerts/triggered`. Anonymous, keyed by device ID.
 - Watchlist panel in the frontend.
-- **Gap:** `migration_v6_alerts.sql` is not confirmed applied to the production
-  Neon database — alerts may be inert in production. Verify before promoting.
+- **Verified 2026-08-03:** `migration_v6_alerts.sql` *is* applied to production
+  Neon. The `alerts` table exists with its full column set, and `GET /alerts`
+  and `GET /alerts/triggered` both answer 200 against it. The table is empty
+  only because no user has created an alert yet — the feature is live, not inert.
 
 ### F7 — Product images *(shipped)*
 - Retailer photos have a white background baked in, which looks broken on a dark
@@ -176,7 +178,8 @@ Speaker, Webcam, Gaming Chair, Printer, Mouse Pad, Gamepad.
 ## 8. Known gaps / roadmap
 
 **Correctness & completeness**
-- [ ] Confirm `migration_v6_alerts.sql` is applied to production Neon (F6).
+- [x] Confirm `migration_v6_alerts.sql` is applied to production Neon (F6) —
+      verified 2026-08-03, it is.
 - [ ] Fill scraper coverage gaps — notably `gamepad` (6 retailers missing),
       `mousepad` (6), `webcam` (4). See the matrix in ARCHITECTURE.md.
 - [ ] Remove or implement the dead `odd` category choice in `run_pipeline.py`.
