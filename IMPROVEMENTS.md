@@ -449,6 +449,28 @@ these SKUs are the shop's own codes (`EWX75V2`), not manufacturer part numbers,
 and an MPN is treated as an *exact* identity. Feeding it proprietary codes risks
 fusing two unrelated products, which is worse than the fuzzy matching it replaces.
 
+**What production taught that local testing could not.** The scraper pulled 600
+listings locally and 111 in its first CI run, and the workflow reported success
+both times. Cloudflare answers `/wp-json` with **403 from a GitHub Actions IP**
+while allowing it from a Bangladeshi residential one, so CI silently fell back
+to the DOM — and the DOM path then read a blocked page as the end of a category,
+stopping `keyboard` at 20 products out of 199.
+
+The fix that mattered was not the Cloudflare handling but **deleting a
+heuristic**. Trying to classify a page as "blocked" versus "empty" from its
+markup failed 14 *complete* scrapes on the next attempt: GPU fetched all 13
+products, then probed page 2 of a one-page category, found no product grid, and
+threw the result away. The page count now comes from page 1's pagination and we
+request exactly that many pages — no page past the end is ever fetched, so there
+is nothing left to guess. Genuine blocking is handled the way Ryans handles it:
+a fresh browser context per page plus the stealth init script, which is known to
+clear Cloudflare from CI because Ryans loads ~7,000 rows a night that way.
+
+*Why it matters:* the API's politeness advantage applies only to local runs —
+CI always takes the DOM path now. And "the workflow went green" is not evidence
+that a scrape worked. Both bad runs passed CI; only querying Neon for row counts
+caught them.
+
 **Note on shop-side price errors:** the MSI RTX 5070 lists at ৳10,500 against
 ৳85,900+ everywhere else. The archive page, the Store API and the product page
 markup all agree, so this is EZ Gadgets' own data entry, faithfully reported.
