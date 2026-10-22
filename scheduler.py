@@ -49,6 +49,30 @@ ALL_RETAILERS = [
     "ezgadgets", "vibegaming",
 ]
 
+# Retailers that now refuse automated access outright — from any IP, including
+# a home connection. Left out of the default sweep: we stop requesting pages a
+# shop has told us not to fetch, and their old listings age out of "in stock"
+# after 7 days (backend/queries.py STALE_LISTING_DAYS). Naming one in
+# --retailers still runs it, to re-test once it is reachable again.
+PAUSED_RETAILERS = {
+    "ryans":      "Cloudflare challenge never clears for automated browsers (since 2026-10-18)",
+    "vibegaming": "Kinsta/Cloudflare answers 'Sorry, you have been blocked' (all of 2026-10)",
+}
+
+# Retailers that block datacenter IPs (GitHub Actions gets 403) but serve a home
+# connection. CI leaves them out; scripts/run_local_scrape.ps1 runs them from
+# the owner's PC on a Windows scheduled task.
+LOCAL_ONLY_RETAILERS = {
+    "ezgadgets": "WooCommerce Store API returns 403 to GitHub Actions (since 2026-10-16)",
+}
+
+
+def default_retailers() -> list[str]:
+    in_ci = os.getenv("GITHUB_ACTIONS") == "true"
+    return [r for r in ALL_RETAILERS
+            if r not in PAUSED_RETAILERS
+            and not (in_ci and r in LOCAL_ONLY_RETAILERS)]
+
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -316,9 +340,10 @@ def main() -> None:
         help="Categories to schedule (default: all 24)",
     )
     parser.add_argument(
-        "--retailers", nargs="+", choices=ALL_RETAILERS, default=ALL_RETAILERS,
+        "--retailers", nargs="+", choices=ALL_RETAILERS, default=None,
         metavar="RETAILER",
-        help="Retailers to include (default: all 15)",
+        help="Retailers to include (default: all 15 minus PAUSED_RETAILERS, "
+             "and minus LOCAL_ONLY_RETAILERS when running in GitHub Actions)",
     )
     parser.add_argument(
         "--once", action="store_true",
@@ -337,8 +362,13 @@ def main() -> None:
     args = parser.parse_args()
 
     categories = args.categories
-    retailers  = args.retailers
+    retailers  = args.retailers or default_retailers()
     interval_s = args.interval_hours * 3600
+    for r in ALL_RETAILERS:
+        if r not in retailers:
+            reason = PAUSED_RETAILERS.get(r) or LOCAL_ONLY_RETAILERS.get(r)
+            if reason:
+                log.info("Skipping %-11s — %s", r, reason)
 
     log.info(
         "Scheduler started — %d categories, interval=%.1fh%s",

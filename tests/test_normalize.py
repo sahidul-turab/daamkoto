@@ -262,6 +262,33 @@ class TestHtmlEntities:
         assert "&#8243;" in n.normalize_name(name)
 
 
+class TestMonitorIdentity:
+    """Size/model regressions previously allowed unlike monitors to share keys."""
+
+    @pytest.mark.parametrize("name,expected", [
+        ('ViewSonic VA2732-MHD-3 27" FHD Monitor', '27"'),
+        ("ViewSonic VA2432A-H 24 Inch Monitor", '24"'),
+        ("Dahua DHI-LM22-A201YF 21.45 Inch Monitor", '21.45"'),
+        ("Dahua DHI-LM19-A202Y 18.5in Monitor", '18.5"'),
+    ])
+    def test_screen_size_formats(self, name, expected):
+        assert n.extract_screen_size(name) == expected
+
+    @pytest.mark.parametrize("name,brand,expected", [
+        ("ViewSonic VA2732-MHD-3 27 Inch Monitor", "ViewSonic", "VA2732-MHD-3"),
+        ("Dahua DHI-LM22-A201YF 21.45 Inch Monitor", "Dahua", "DHI-LM22-A201YF"),
+        ("LG 27GN800-B 27 Inch Monitor", "LG", "27GN800-B"),
+    ])
+    def test_model_extraction(self, name, brand, expected):
+        assert n.extract_monitor_model(name, brand) == expected
+
+    def test_different_models_never_share_a_key(self):
+        common = {"price_bdt": 10000, "in_stock": True, "source": "Shop"}
+        a = n.clean_monitor_record({**common, "name": "ViewSonic VA2209-H-2 22 Inch FHD 100Hz Monitor"})
+        b = n.clean_monitor_record({**common, "name": "ViewSonic VA2432-H 24 Inch FHD 100Hz Monitor"})
+        assert a["match_key"] != b["match_key"]
+
+
 # ---------------------------------------------------------------------------
 # 4. Contracts — dispatcher and cleaner output shape
 # ---------------------------------------------------------------------------

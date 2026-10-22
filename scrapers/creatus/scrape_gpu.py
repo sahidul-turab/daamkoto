@@ -93,7 +93,9 @@ async def scrape_page(page, url: str) -> list[dict]:
 
         cart_btn = await card.query_selector(".btn-cart, [onclick*='cart.add']")
         card_text = (await card.inner_text()).lower()
-        if (extreme_discount or
+        if any(w in card_text for w in ("coming soon", "upcoming", "pre order", "pre-order")):
+            stock_status = "upcoming"
+        elif (extreme_discount or
                 any(w in card_text for w in ("out of stock", "out-of-stock", "stock out"))):
             stock_status = "out_of_stock"
         elif cart_btn is not None and price is not None:

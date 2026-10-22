@@ -44,10 +44,19 @@ function useLatch(active: boolean): boolean {
 /** Placeholder while a lazily-loaded view's chunk arrives. */
 function ViewLoading() {
   return (
-    <div className="product-grid gap-4">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="skeleton h-40 rounded-2xl" />
-      ))}
+    <div aria-live="polite" aria-label="Loading view" className="space-y-4">
+      <div className="flex items-center gap-3 text-sm font-medium text-ink-3">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-line-2 border-t-brand" />
+        Loading this view…
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="rounded-2xl border border-line bg-surface-2/40 p-4">
+            <div className="skeleton h-5 w-32 rounded" />
+            <div className="skeleton mt-3 h-12 rounded-xl" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

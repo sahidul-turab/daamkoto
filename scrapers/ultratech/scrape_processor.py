@@ -107,7 +107,7 @@ async def scrape_page(page, url: str) -> list[dict]:
             stock_status = "out_of_stock"
         in_stock = stock_status == "in_stock"
 
-        pc_bundle_only = any(w in card_text for w in ("bundle only", "bundle with pc", "only bundle", "pc bundle"))
+        pc_bundle_only = any(w in card_text for w in ("bundle only", "bundle with pc", "only bundle", "pc bundle", "with pc build", "only with pc")) or "bundle" in (product_url or "").lower()
         products.append({
             "image_url": await extract_image(card),
             "name": name,

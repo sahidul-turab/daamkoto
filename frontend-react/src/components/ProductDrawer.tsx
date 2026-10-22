@@ -237,12 +237,12 @@ export function ProductDrawer({
                                 ⚠ PC bundle only
                               </div>
                             )}
-                            {isAdmin && l.scraped_at && (
+                            {l.scraped_at && (
                               <div
-                                className="mt-1 text-[10px] font-semibold text-warn"
+                                className={`mt-1 text-[10px] font-semibold ${relativeTime(l.scraped_at).includes("day") ? "text-warn" : "text-ink-4"}`}
                                 title={new Date(l.scraped_at).toLocaleString()}
                               >
-                                Updated {relativeTime(l.scraped_at)}
+                                Checked {relativeTime(l.scraped_at)}
                               </div>
                             )}
                           </div>
@@ -271,6 +271,10 @@ export function ProductDrawer({
                     <PriceHistoryChart history={history?.history ?? []} />
                   </Suspense>
                 )}
+              </div>
+
+              <div className="mb-6 rounded-xl border border-line bg-surface-2/55 px-4 py-3 text-xs leading-relaxed text-ink-3">
+                Prices are collected from retailer pages and may change before checkout. Bundle-only and listings not re-checked in 7 days are excluded from the best-price calculation.
               </div>
 
               {/* Seller-specs disagreement panel */}

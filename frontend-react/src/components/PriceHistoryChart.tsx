@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import type { PricePoint } from "../types";
 import { retailerColor } from "../config";
-import { formatBDTShort } from "../lib/format";
+import { formatBDT, formatBDTShort } from "../lib/format";
 
 interface Row {
   t: number;
@@ -55,8 +55,41 @@ export function PriceHistoryChart({ history }: { history: PricePoint[] }) {
     );
   }
 
+  const values = history
+    .filter((point) => point.price_bdt != null)
+    .map((point) => point.price_bdt as number);
+  const latestTime = Math.max(...history.map((point) => new Date(point.scraped_at).getTime()));
+  const latestValues = history
+    .filter((point) => new Date(point.scraped_at).getTime() === latestTime && point.price_bdt != null)
+    .map((point) => point.price_bdt as number);
+  const currentBest = latestValues.length ? Math.min(...latestValues) : values[values.length - 1] ?? null;
+  const allTimeLow = values.length ? Math.min(...values) : null;
+
   return (
-    <div className="h-64 w-full">
+    <div>
+      <div className="mb-3 grid grid-cols-3 gap-2">
+        <div className="rounded-lg border border-line bg-surface-2 px-2.5 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-ink-4">Current best</div>
+          <div className="mt-0.5 text-sm font-bold text-ink">{formatBDT(currentBest)}</div>
+        </div>
+        <div className="rounded-lg border border-line bg-surface-2 px-2.5 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-ink-4">Recorded low</div>
+          <div className="mt-0.5 text-sm font-bold text-ok">{formatBDT(allTimeLow)}</div>
+        </div>
+        <div className="rounded-lg border border-line bg-surface-2 px-2.5 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-ink-4">Observations</div>
+          <div className="mt-0.5 text-sm font-bold text-ink">{history.length}</div>
+        </div>
+      </div>
+      <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
+        {retailers.map((retailer) => (
+          <span key={retailer} className="inline-flex items-center gap-1.5 text-[10px] text-ink-3">
+            <span className="h-2 w-2 rounded-full" style={{ background: retailerColor(retailer) }} />
+            {retailer}
+          </span>
+        ))}
+      </div>
+      <div className="h-56 w-full sm:h-64">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: -8 }}>
           <CartesianGrid stroke="#26262f" vertical={false} />
@@ -97,6 +130,7 @@ export function PriceHistoryChart({ history }: { history: PricePoint[] }) {
           ))}
         </LineChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 }

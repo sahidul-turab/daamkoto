@@ -10,6 +10,7 @@ The agent loop calls execute_tool(conn, name, arguments) to dispatch.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from backend import queries, compat as compat_mod
@@ -359,6 +360,53 @@ def _handle_check_compatibility(conn, **kwargs) -> dict:
     return result.to_dict()
 
 
+_BUILD_JUNK = {
+    "gpu": re.compile(r"\b(holder|bracket|riser|support|vertical kit|backplate|enclosure)\b", re.I),
+    "mobo": re.compile(r"\b(onboard|embedded|with cpu|cpu motherboard)\b|motherboard.*\bcpu\b", re.I),
+    "storage": re.compile(r"\b(enclosure|case|caddy|adapter|converter|dock|docking)\b", re.I),
+    "case": re.compile(r"\b(case fan|casing fan|cooling fan|fan grill|fan hub|fan controller)\b", re.I),
+    "cooler": re.compile(r"\b(case fan|casing fan|chassis fan|fan grill|fan hub|fan controller)\b", re.I),
+}
+
+
+def _valid_build_candidate(slot: str, product: dict) -> bool:
+    """Reject accessories and unusably weak parts from automated build plans."""
+    name = product.get("name") or ""
+    specs = product.get("specs") or {}
+    if pattern := _BUILD_JUNK.get(slot):
+        if pattern.search(name):
+            return False
+    if slot == "gpu":
+        return bool(specs.get("chipset"))
+    if slot == "storage":
+        return bool(specs.get("capacity")) and not re.search(r"\b(usb|portable)\b", name, re.I)
+    if slot == "psu":
+        watts = specs.get("wattage") or name
+        match = re.search(r"(\d{3,4})\s*W", str(watts), re.I)
+        return bool(match and int(match.group(1)) >= 450)
+    return True
+
+
+def _infer_cpu_socket(product: dict | None) -> str | None:
+    """Fill common socket gaps left by retailer listing-card data."""
+    if not product:
+        return None
+    specs = product.get("specs") or {}
+    if specs.get("socket"):
+        return str(specs["socket"])
+    name = product.get("name") or ""
+    if re.search(r"\b(?:12th|13th|14th)\s+Gen\b", name, re.I):
+        return "LGA1700"
+    if re.search(r"\b(?:10th|11th)\s+Gen\b", name, re.I):
+        return "LGA1200"
+    if re.search(r"\bCore\s+Ultra\b", name, re.I):
+        return "LGA1851"
+    ryzen = re.search(r"\bRyzen\s+[3579]\s+(\d{4})", name, re.I)
+    if ryzen:
+        return "AM5" if int(ryzen.group(1)[0]) >= 7 else "AM4"
+    return None
+
+
 def _handle_plan_build(conn, budget_bdt: float, use_case: str = "balanced",
                        socket_preference: str | None = None,
                        include_gpu: bool = True, **_) -> dict:
@@ -384,8 +432,11 @@ def _handle_plan_build(conn, budget_bdt: float, use_case: str = "balanced",
     slot_budgets: dict[str, float] = {}
     build_cost = 0.0
 
-    # First pass: find cheapest part within budget for each slot
-    for slot, share in profile.items():
+    # Pick the strongest valid part that fits each allocation. Price-descending
+    # avoids the former behaviour of spending only ৳10k of an ৳80k budget.
+    slot_order = ["cpu", "mobo", "ram", "gpu", "storage", "psu", "case", "cooler"]
+    for slot in slot_order:
+        share = profile.get(slot, 0)
         if share == 0:
             continue
         slot_budget = budget_bdt * share
@@ -396,18 +447,26 @@ def _handle_plan_build(conn, budget_bdt: float, use_case: str = "balanced",
 
         kwargs: dict = {
             "category": category,
-            "sort": "price_asc",
+            "sort": "price_desc",
             "in_stock_only": True,
-            "max_price": slot_budget * 1.1,  # slight headroom
-            "limit": 5,
+            # Headroom per slot compounds across eight parts and previously
+            # turned an ৳80k request into an ৳87k build. Keep each allocation
+            # hard; any unspent amount naturally makes the final build cheaper.
+            "max_price": slot_budget,
+            "limit": 30,
         }
+        effective_socket = socket_preference or _infer_cpu_socket(build.get("cpu"))
         if socket_preference and slot == "cpu":
-            kwargs["socket"] = socket_preference
-        if socket_preference and slot == "mobo":
-            kwargs["socket"] = socket_preference
+            kwargs["specs_filter"] = {"socket": socket_preference}
+        if effective_socket and slot == "mobo":
+            kwargs["specs_filter"] = {"socket": effective_socket}
 
         products, _ = queries.search_products(conn, **kwargs)
-        chosen = products[0] if products else None
+        chosen = next((
+            p for p in products
+            if _valid_build_candidate(slot, p)
+            and not compat_mod.evaluate_build({**build, slot: p}).has_errors()
+        ), None)
         build[slot] = chosen
         if chosen and chosen.get("cheapest_price"):
             build_cost += float(chosen["cheapest_price"])
@@ -432,11 +491,14 @@ def _handle_plan_build(conn, budget_bdt: float, use_case: str = "balanced",
                 "budget_allocated": round(slot_budgets.get(slot, 0)),
             })
 
+    required_slots = {slot for slot, share in profile.items() if share > 0}
+    complete = all(build.get(slot) is not None for slot in required_slots)
     return {
         "profile": profile_name,
         "budget_bdt": float(budget_bdt),
         "total_cost": round(build_cost),
-        "within_budget": build_cost <= float(budget_bdt) * 1.05,
+        "complete": complete,
+        "within_budget": complete and build_cost <= float(budget_bdt),
         "slots": slots_out,
         "compatibility": compat_result.to_dict(),
     }

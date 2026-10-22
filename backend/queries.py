@@ -118,10 +118,18 @@ _CURRENT_PRICES_CTE = f"""
 WITH current_prices AS (
     SELECT m.product_id, m.retailer, m.price_bdt,
            CASE WHEN m.scraped_at < NOW() - INTERVAL '{STALE_LISTING_DAYS} days'
+                THEN FALSE
+                WHEN m.pc_bundle_only OR m.stock_status = 'bundle_only'
+                     OR COALESCE(m.product_url, '') ~* '(bundle|only[-_/]?with[-_/]?pc|pc[-_/]?build)'
                 THEN FALSE ELSE m.in_stock END AS in_stock,
            CASE WHEN m.scraped_at < NOW() - INTERVAL '{STALE_LISTING_DAYS} days'
-                THEN 'stale' ELSE m.stock_status END AS stock_status,
-           m.pc_bundle_only, m.product_url, m.image_url,
+                THEN 'stale'
+                WHEN m.pc_bundle_only OR m.stock_status = 'bundle_only'
+                     OR COALESCE(m.product_url, '') ~* '(bundle|only[-_/]?with[-_/]?pc|pc[-_/]?build)'
+                THEN 'bundle_only' ELSE m.stock_status END AS stock_status,
+           (m.pc_bundle_only OR m.stock_status = 'bundle_only'
+            OR COALESCE(m.product_url, '') ~* '(bundle|only[-_/]?with[-_/]?pc|pc[-_/]?build)') AS pc_bundle_only,
+           m.product_url, m.image_url,
            ic.cutout_path AS image_cutout, m.scraped_at
     FROM mv_current_prices m
     LEFT JOIN image_cutouts ic ON ic.source_url = m.image_url

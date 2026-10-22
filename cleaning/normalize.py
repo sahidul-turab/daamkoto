@@ -1333,10 +1333,17 @@ def extract_monitor_brand(name: str) -> str:
 
 
 def extract_screen_size(name: str) -> str | None:
-    m = re.search(r"\b(\d{2}(?:\.\d)?)\s*(?:inch|\"|″|')\b", name, re.IGNORECASE)
+    # A quote followed by whitespace/end has no word boundary. The old final
+    # `\b` therefore discarded common `24\"` names. Guarding the start also
+    # prevents `21.45 Inch` from being re-read as the bogus size `45 Inch`.
+    m = re.search(
+        r"(?<![\d.])(\d{2}(?:\.\d{1,2})?)\s*(?:(?:inch|inches)\b|[\"″'])",
+        name,
+        re.IGNORECASE,
+    )
     if m:
         return f"{m.group(1)}\""
-    m = re.search(r"\b(\d{2}(?:\.\d)?)\s*in\b", name, re.IGNORECASE)
+    m = re.search(r"(?<![\d.])(\d{2}(?:\.\d{1,2})?)\s*in\b", name, re.IGNORECASE)
     if m:
         return f"{m.group(1)}\""
     return None
@@ -1390,8 +1397,21 @@ def extract_response_time(name: str) -> str | None:
     return None
 
 
-def build_monitor_match_key(brand: str, size: str | None, resolution: str | None, refresh: str | None) -> str:
+def extract_monitor_model(name: str, brand: str) -> str | None:
+    """Extract the maker's model token: the strongest monitor identity field."""
+    rest = re.sub(r"^" + re.escape(brand), "", name, count=1, flags=re.IGNORECASE).strip()
+    tokens = re.findall(
+        r"\b[A-Z0-9]+(?:-[A-Z0-9]+)+\b|\b(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*\d)[A-Z0-9]{5,}\b",
+        rest,
+        re.IGNORECASE,
+    )
+    return tokens[0].upper() if tokens else None
+
+
+def build_monitor_match_key(brand: str, model: str | None, size: str | None, resolution: str | None, refresh: str | None) -> str:
     parts = [brand.lower()]
+    if model:
+        parts.append(re.sub(r"[^a-z0-9]+", "_", model.lower()).strip("_"))
     if size:
         parts.append(size.lower().replace('"', 'inch'))
     if resolution:
@@ -1405,6 +1425,7 @@ def clean_monitor_record(raw: dict) -> dict:
     name = raw.get("name", "")
     norm_name = normalize_name(name)
     brand = extract_monitor_brand(norm_name)
+    model = extract_monitor_model(norm_name, brand)
     size = extract_screen_size(norm_name)
     resolution = extract_resolution(norm_name)
     refresh_rate = extract_refresh_rate(norm_name)
@@ -1412,9 +1433,10 @@ def clean_monitor_record(raw: dict) -> dict:
     response_time = extract_response_time(norm_name)
     curved = bool(re.search(r"\bcurved\b", norm_name, re.IGNORECASE))
     hdr = bool(re.search(r"\bHDR\b", norm_name, re.IGNORECASE))
-    match_key = build_monitor_match_key(brand, size, resolution, refresh_rate)
+    match_key = build_monitor_match_key(brand, model, size, resolution, refresh_rate)
 
     specs = {
+        "model":          model,
         "screen_size":    size,
         "resolution":     resolution,
         "refresh_rate":   refresh_rate,

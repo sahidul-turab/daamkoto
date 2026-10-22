@@ -93,7 +93,9 @@ async def scrape_page(page, url: str) -> list[dict]:
 
         cart_btn = await card.query_selector(".btn-cart, [onclick*='cart.add']")
         card_text = (await card.inner_text()).lower()
-        if (extreme_discount or
+        if any(w in card_text for w in ("coming soon", "upcoming", "pre order", "pre-order")):
+            stock_status = "upcoming"
+        elif (extreme_discount or
                 any(w in card_text for w in ("out of stock", "out-of-stock", "stock out"))):
             stock_status = "out_of_stock"
         elif cart_btn is not None and price is not None:
@@ -102,7 +104,7 @@ async def scrape_page(page, url: str) -> list[dict]:
             stock_status = "out_of_stock"
         in_stock = stock_status == "in_stock"
 
-        pc_bundle_only = any(w in card_text for w in ("bundle only", "bundle with pc", "only bundle", "pc bundle"))
+        pc_bundle_only = any(w in card_text for w in ("bundle only", "bundle with pc", "only bundle", "pc bundle", "with pc build", "only with pc")) or "bundle" in (product_url or "").lower()
         products.append({
             "image_url": await extract_image(card),
             "name": name,

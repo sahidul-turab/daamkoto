@@ -121,7 +121,7 @@ export function ProductCard({
       onMouseMove={onMove}
       onMouseLeave={onLeave}
       onClick={() => onOpen(product)}
-      className="card-interactive group flex cursor-pointer flex-col p-5 animate-fade-up"
+      className="card-interactive group flex cursor-pointer flex-col p-4 sm:p-5 animate-fade-up"
       style={{ animationDelay: `${Math.min(index, 12) * 30}ms`, willChange: "transform" }}
     >
       {/* Glare overlay for the tilt effect */}
@@ -135,7 +135,7 @@ export function ProductCard({
              a light tile with mix-blend-multiply so the white blends away.
           3. Placeholder: a muted theme-matching slot when there's no image. */}
       {showCutout ? (
-        <div className="relative mb-4 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,0.06),transparent_70%)]">
+        <div className="relative mb-3 flex aspect-[16/9] items-center justify-center overflow-hidden rounded-xl bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,0.06),transparent_70%)] sm:mb-4 sm:aspect-[4/3]">
           <img
             src={cutoutUrl!}
             alt={product.name}
@@ -146,7 +146,7 @@ export function ProductCard({
           />
         </div>
       ) : showPhoto ? (
-        <div className="relative mb-4 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-white to-slate-100 shadow-sm ring-1 ring-inset ring-black/[0.05]">
+        <div className="relative mb-3 flex aspect-[16/9] items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-white to-slate-100 shadow-sm ring-1 ring-inset ring-black/[0.05] sm:mb-4 sm:aspect-[4/3]">
           <img
             src={photoUrl!}
             alt={product.name}
@@ -157,7 +157,7 @@ export function ProductCard({
           />
         </div>
       ) : (
-        <div className="relative mb-4 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl bg-white/[0.02] ring-1 ring-inset ring-white/[0.06]">
+        <div className="relative mb-3 flex aspect-[16/9] items-center justify-center overflow-hidden rounded-xl bg-white/[0.02] ring-1 ring-inset ring-white/[0.06] sm:mb-4 sm:aspect-[4/3]">
           <ImageOff className="h-8 w-8 text-white/10" strokeWidth={1.5} />
         </div>
       )}
@@ -181,7 +181,7 @@ export function ProductCard({
       </div>
 
       {/* Name */}
-      <h3 className="relative mt-3 line-clamp-2 min-h-[2.6em] text-[15px] font-semibold leading-snug text-ink transition-colors group-hover:text-white">
+      <h3 className="relative mt-2 line-clamp-2 min-h-[2.6em] text-[15px] font-semibold leading-snug text-ink transition-colors group-hover:text-white sm:mt-3">
         {product.name}
       </h3>
 
@@ -197,7 +197,7 @@ export function ProductCard({
       )}
 
       {/* Price block */}
-      <div className="relative mt-auto pt-5">
+      <div className="relative mt-auto pt-3 sm:pt-5">
         {savings > 0 && (
           <div className="mb-1.5 inline-flex items-center gap-1 rounded-md bg-ok/10 px-1.5 py-0.5 text-[11px] font-semibold text-ok">
             <TrendingDown className="h-3 w-3" />
@@ -207,7 +207,7 @@ export function ProductCard({
         <div className="flex items-end justify-between gap-2">
           <div>
             <div className="text-[11px] font-medium uppercase tracking-wide text-ink-4">from</div>
-            <div className="text-2xl font-extrabold tracking-tight text-ink tabular-nums">
+            <div className="text-xl font-extrabold tracking-tight text-ink tabular-nums sm:text-2xl">
               {formatBDT(animatedPrice)}
             </div>
             {product.cheapest_retailer && (

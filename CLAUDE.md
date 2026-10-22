@@ -52,6 +52,19 @@ GitHub Actions. Everything is free tier.
 15. **VibeGaming** — `vibegaming.com.bd` (WooCommerce; 21 scrapers — no laptop
     RAM, portable SSD or portable HDD listing)
 
+> **Where each retailer runs (Oct 2026)** — set in `scheduler.py`:
+> - **Paused** (`PAUSED_RETAILERS`): **Ryans** and **VibeGaming** now refuse
+>   automated access from *any* IP, a home connection included (Ryans'
+>   Cloudflare challenge never clears; VibeGaming answers "you have been
+>   blocked"). They are out of the default sweep and their listings age to
+>   `stale` after 7 days. **Do not add stealth plugins, challenge solvers or
+>   proxies to get around this** — it is the shop's explicit choice, and
+>   getting blocked ends the product. Re-test with `--retailers ryans` later.
+> - **Local only** (`LOCAL_ONLY_RETAILERS`): **EZGadgets** 403s GitHub Actions'
+>   datacenter IPs but serves a home connection. GitHub skips it; the Windows
+>   task "DaamKoto local scrape" runs `scripts/run_local_scrape.ps1` nightly
+>   from the owner's PC into Neon (log: `logs/local_scrape.log`).
+
 Coverage per retailer is uneven by design. The full `Y`/`.` matrix lives in
 [ARCHITECTURE.md](ARCHITECTURE.md#scraper-coverage-matrix).
 

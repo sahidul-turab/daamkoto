@@ -233,7 +233,9 @@ def evaluate_build(products: dict[str, dict | None]) -> CompatResult:
     recommended_psu = round_to_psu_size(round(estimated_watts * 1.4))
 
     psu_watts_val: int | None = None
-    psu_wattage_str = _spec(psu, "wattage")
+    # Older rows occasionally missed the structured wattage even though it is
+    # explicit in the product name. Builds still need a real headroom check.
+    psu_wattage_str = _spec(psu, "wattage") or (psu or {}).get("name")
     if psu_wattage_str:
         m = re.search(r"(\d{3,4})\s*W", psu_wattage_str, re.I)
         if m:
@@ -283,12 +285,14 @@ BUDGET_PROFILES: dict[str, dict[str, float]] = {
     "gaming": {
         "gpu":     0.30,
         "cpu":     0.18,
-        "mobo":    0.10,
+        # Current LGA1700/AM5 entry boards need more than the old 10% slice;
+        # that cap could return a build with no motherboard at all.
+        "mobo":    0.13,
         "ram":     0.09,
         "storage": 0.08,
         "psu":     0.09,
-        "case":    0.08,
-        "cooler":  0.08,
+        "case":    0.07,
+        "cooler":  0.06,
     },
     "workstation": {
         "cpu":     0.25,

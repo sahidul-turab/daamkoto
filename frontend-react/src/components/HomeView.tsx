@@ -105,15 +105,15 @@ export function HomeView({
         <div className="relative mt-10 grid gap-3 border-t border-line pt-6 sm:grid-cols-3 lg:max-w-3xl">
           <div className="flex items-center gap-3 text-sm text-ink-3">
             <Store className="h-5 w-5 text-brand" />
-            <span><strong className="text-ink">{retailerCount || 13}</strong> retailers compared</span>
+            <span><strong className="text-ink">{retailerCount || 15}</strong> retailers tracked</span>
           </div>
           <div className="flex items-center gap-3 text-sm text-ink-3">
             <BadgeCheck className="h-5 w-5 text-ok" />
-            <span>Best available price first</span>
+            <span>Fresh, buyable prices first</span>
           </div>
           <div className="flex items-center gap-3 text-sm text-ink-3">
             <ShieldCheck className="h-5 w-5 text-cyan-400" />
-            <span>Direct links to each store</span>
+            <span>Independent · no checkout markup</span>
           </div>
         </div>
       </section>
@@ -141,8 +141,8 @@ export function HomeView({
         <div className="mb-7 flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="label">Easy starting points</p>
-            <h2 className="mt-1 text-2xl font-bold tracking-tight">Popular categories</h2>
-            <p className="mt-1 text-sm text-ink-3">Products available from the most stores, grouped for quick browsing.</p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight">Widely available products</h2>
+            <p className="mt-1 text-sm text-ink-3">Fresh comparisons from multiple stores, screened for suspicious price outliers.</p>
           </div>
         </div>
 
