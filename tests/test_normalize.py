@@ -199,6 +199,42 @@ class TestGpuChipsetRegression:
     def test_intel_arc_keeps_its_casing(self):
         assert n.extract_chipset("Intel Arc A770 16GB") == "Arc A770"
 
+    @pytest.mark.parametrize("name,expected", [
+        # ™ and soft hyphens hid the chipset from 140 GPUs (2026-10)
+        ("ASUS TUF Gaming GeForce RTX™ 5060 8GB GDDR7 OC Edition", "RTX 5060"),
+        ("GIGABYTE GeForce RTX­­ 4060 Ti GAMING OC 8G", "RTX 4060 TI"),
+        # one spelling per chipset, so filter values and match keys agree
+        ("ASUS ROG STRIX RX590 8GB", "RX 590"),
+        ("ZOTAC GAMING GEFORCE RTX2080Ti AMP", "RTX 2080 TI"),
+        ("XFX Speedster SWFT309 RX 6700XT 12GB", "RX 6700 XT"),
+        ("Arktek GeForce GT740 4GB", "GT 740"),
+        ("AFOX GeForce GTX 750 Ti 4GB GDDR5", "GTX 750 TI"),
+        ("GUNNIR ARC A380 6GB", "Arc A380"),
+    ])
+    def test_decorated_and_squashed_names(self, name, expected):
+        assert n.extract_chipset(name) == expected
+
+
+class TestGpuAccessoryExclusion:
+    """Accessories filed under graphics cards must not become GPU products —
+    a card holder was the cheapest "GPU" on the site (2026-10)."""
+
+    @pytest.mark.parametrize("name", [
+        "Deepcool GH-01 A-RGB Graphics Card Holder",
+        "Cougar Poseidon Vistek Pro ARGB 360mm AIO Liquid CPU Cooler",
+        "Lian Li Vertical GPU Riser Kit",
+    ])
+    def test_accessories_are_excluded(self, name):
+        assert n.clean_gpu_record({"name": name})["exclude_reason"]
+
+    @pytest.mark.parametrize("name", [
+        "AFOX Radeon R7 350 2GB GDDR5 Single Fan Graphics Card",  # no chipset, still a GPU
+        "MSI GeForce RTX 4060 VENTUS 2X with GPU Holder",          # chipset wins
+        "Nvidia T1000 8GB DDR6 PCIE Workstation Video Graphics Card",
+    ])
+    def test_real_cards_are_kept(self, name):
+        assert n.clean_gpu_record({"name": name})["exclude_reason"] is None
+
     @pytest.mark.parametrize("chipset,brand", [
         ("RTX 5070 TI", "NVIDIA"), ("GT 730", "NVIDIA"),
         ("RX 580", "AMD"), ("RX 9070 XT", "AMD"),

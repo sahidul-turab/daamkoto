@@ -468,22 +468,49 @@ def extract_gpu_brand(name: str) -> str:
     return extract_brand(name)
 
 
+# Retailers decorate names with ™/® and invisible soft hyphens ("RTX­­ 4060"),
+# which break "RTX 5060" apart so the chipset regex missed it: 140 GPUs had no
+# chipset and silently dropped out of the chipset filter.
+_NAME_MARKS = re.compile(r"[­​-‏⁠﻿™®©]")
+
+
+def _canonical_chipset(raw: str) -> str:
+    """One spelling per chipset: "RX550" / "rx 550" -> "RX 550",
+    "RTX 4060TI" -> "RTX 4060 TI", "ARC A310" -> "Arc A310"."""
+    s = re.sub(r"\s+", " ", raw.strip().upper())
+    s = re.sub(r"^(RTX|GTX|GT|RX|ARC) ?", r"\1 ", s)
+    s = re.sub(r"(\d)(TI|SUPER|XTX|XT|GRE)\b", r"\1 \2", s)
+    s = re.sub(r"\bTI ?SUPER\b", "TI SUPER", s)
+    return re.sub(r"^ARC ", "Arc ", s)
+
+
 def extract_chipset(name: str) -> str | None:
+    name = _NAME_MARKS.sub("", name)
     m = re.search(
         r"\b(RTX\s*\d{4}(?:\s*Ti(?:\s*Super)?|\s*Super)?|"
-        r"GTX\s*\d{4}(?:\s*Ti(?:\s*Super)?|\s*Super)?|"
+        r"GTX\s*\d{3,4}(?:\s*Ti(?:\s*Super)?|\s*Super)?|"   # 3 digits: GTX 750 Ti
         r"GT\s*\d{3,4})\b",
         name, re.IGNORECASE,
     )
     if m:
-        return re.sub(r"\s+", " ", m.group(1).strip().upper())
+        return _canonical_chipset(m.group(1))
     m = re.search(r"\b(RX\s*\d{3,4}(?:\s*(?:XTX|XT|GRE))?)\b", name, re.IGNORECASE)
     if m:
-        return re.sub(r"\s+", " ", m.group(1).strip().upper())
+        return _canonical_chipset(m.group(1))
     m = re.search(r"\b(Arc\s*[AB]\d{3})\b", name, re.IGNORECASE)
     if m:
-        return re.sub(r"\s+", " ", m.group(1).strip())
+        return _canonical_chipset(m.group(1))
     return None
+
+
+# Things retailers file under "graphics card" that are not graphics cards.
+# Only applied when no chipset was found, so a real card sold "with holder"
+# is kept. Deliberately no "fan": "Single Fan Graphics Card" is a GPU.
+_GPU_ACCESSORY = re.compile(
+    r"\b(holder|bracket|anti[- ]?sag|riser|extender|backplate|water ?block|"
+    r"cpu cooler|liquid cooler|aio|thermal pad|power cable|extension cable)\b",
+    re.IGNORECASE,
+)
 
 
 def extract_chipset_brand(chipset: str | None) -> str | None:
@@ -606,6 +633,8 @@ def clean_gpu_record(raw: dict) -> dict:
         "speed": None, "latency": None, "form_factor": "Desktop",
         "match_key": match_key,
         "specs": specs,
+        "exclude_reason": ("not a graphics card"
+                           if chipset is None and _GPU_ACCESSORY.search(norm_name) else None),
     }
 
 
@@ -2331,8 +2360,15 @@ def main():
     # specs         = full spec table from detail-page enrichment (StarTech enrich.py)
     # Together they form seller_raw_specs used for cross-seller spec comparison.
     clean_records = []
+    excluded = 0
     for raw in raw_records:
         cleaned = cleaner(raw)
+        # A cleaner sets exclude_reason for listings filed under the wrong
+        # category (a GPU holder under graphics cards). Dropping it here means
+        # the loader never sees it and its old listing expires (migration v8).
+        if cleaned.get("exclude_reason"):
+            excluded += 1
+            continue
         inline = raw.get("inline_specs") or {}
         raw_spec_table = raw.get("specs") or {}
         # Detail-page specs override inline where keys clash (more authoritative)
@@ -2353,6 +2389,8 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(clean_records, f, ensure_ascii=False, indent=2)
     print(f"Saved: {out_path}")
+    if excluded:
+        print(f"  Excluded {excluded} listing(s) filed under the wrong category.")
 
     label = f"{retailer.title()} {category.upper()}"
     print_summary(raw_records, clean_records, label=label)
