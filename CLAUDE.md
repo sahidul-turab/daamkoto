@@ -704,6 +704,7 @@ Every one of these has already cost real debugging time. They share a pattern:
 | **Cache loaders** | A loader passed to `cache.get_or_load` **must open its own connection** — it can run on a background thread after the request returned |
 | **Unbounded query** | `/products` with neither `category` nor `search` scans the whole catalogue. `useProductSearch` refuses it; keep that guard |
 | **Ryans / Cloudflare** | Needs a **fresh browser context per page**. Reusing one context re-triggers the challenge. `curl`/`requests` are rate-limited too — backfills must use Playwright |
+| **Techland / Cloudflare** | Same rule since the Oct 2026 redesign: a context's *second* navigation gets a 403 "Sorry, you have been blocked". All 21 scrapers open a fresh context per `?page=N` load and exit 1 on zero products — the old selectors returned zero silently for 83 days |
 | **Scraper field loss** | A scraper returning *fewer fields* still "succeeds". Ryans dropped `product_slug` and every URL became NULL with no error |
 | **rembg** | OOMs above 6 workers on this machine and fails silently. Keep `--workers 6` |
 | **R2** | Never serve from `r2.dev` (rate-limited). Always go through the Worker |

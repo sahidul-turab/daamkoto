@@ -17,7 +17,7 @@ recorded, so adding a category is a data change rather than 13 edited files.
 RETAILERS = {
     "startech":       ("https://www.startech.com.bd",    ".p-item"),
     "ryans":          ("https://www.ryans.com",          ".category-single-product"),
-    "techland":       ("https://www.techlandbd.com",     "article.products-list__item"),
+    "techland":       ("https://www.techlandbd.com",     ".products-list__item"),
     "potakait":       ("https://potakait.com",           ".product-item"),
     "ucc":            ("https://www.ucc.com.bd",         ".product-thumb"),
     "ultratech":      ("https://www.ultratech.com.bd",   ".product-thumb"),
