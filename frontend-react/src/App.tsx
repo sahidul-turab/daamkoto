@@ -397,10 +397,14 @@ export default function App() {
 
       <footer className="app-shell flex flex-wrap items-center justify-center gap-x-3 gap-y-2 py-10 text-center text-xs text-ink-4">
         <span>DaamKoto · Prices in BDT · Bangladesh</span>
-        <span aria-hidden="true">·</span>
-        <button className="transition-colors hover:text-brand" onClick={() => navigateView("admin")}>
-          {admin.authenticated ? "Admin dashboard" : "Owner access"}
-        </button>
+        {admin.authenticated && (
+          <>
+            <span aria-hidden="true">·</span>
+            <button className="transition-colors hover:text-brand" onClick={() => navigateView("admin")}>
+              Admin dashboard
+            </button>
+          </>
+        )}
       </footer>
     </div>
   );

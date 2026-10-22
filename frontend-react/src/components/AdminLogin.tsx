@@ -47,15 +47,15 @@ export function AdminLogin({ checking, onLogin }: Props) {
           <LockKeyhole className="h-6 w-6" />
         </div>
         <div className="mt-5 text-center">
-          <h1 className="text-2xl font-bold">Owner access</h1>
+          <h1 className="text-2xl font-bold">Private access</h1>
           <p className="mt-2 text-sm leading-relaxed text-ink-3">
-            Sign in to view scraper health, retailer freshness, update times, and operational product details.
+            This area is restricted to authorized site operators.
           </p>
         </div>
 
         <form className="mt-7 space-y-4" onSubmit={submit}>
           <label className="block">
-            <span className="label">Admin password</span>
+            <span className="label">Password</span>
             <span className="relative block">
               <input
                 type={showPassword ? "text" : "password"}
@@ -85,7 +85,7 @@ export function AdminLogin({ checking, onLogin }: Props) {
 
           <button className="btn-brand w-full !py-3" type="submit" disabled={!password || submitting}>
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-            {submitting ? "Signing in…" : "Open admin panel"}
+            {submitting ? "Signing in…" : "Continue"}
           </button>
         </form>
 

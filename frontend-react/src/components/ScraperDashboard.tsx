@@ -85,7 +85,7 @@ export function ScraperDashboard({ adminToken, onUnauthorized }: Props) {
       setFetchErr(null);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) onUnauthorized();
-      setFetchErr(e instanceof ApiError ? e.message : "Failed to load scraper status");
+      setFetchErr(e instanceof ApiError ? e.message : "Failed to load update status");
     } finally {
       setLoading(false);
     }
@@ -177,7 +177,7 @@ export function ScraperDashboard({ adminToken, onUnauthorized }: Props) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Activity className="h-5 w-5 text-brand" />
-          <h2 className="text-xl font-bold">Scraper Health</h2>
+          <h2 className="text-xl font-bold">Data Update Health</h2>
         </div>
         <button className="btn-ghost !gap-1.5 !rounded-xl text-sm" onClick={refresh}>
           <RefreshCw className="h-3.5 w-3.5" />
@@ -275,7 +275,7 @@ export function ScraperDashboard({ adminToken, onUnauthorized }: Props) {
                 <div>
                   <div className="font-semibold">Automated daily refresh</div>
                   <p className="mt-1 text-sm leading-relaxed text-ink-3">
-                    Production scraping runs through the scheduled GitHub Actions pipeline. This hosted API is intentionally read-only because it does not contain browser scraping dependencies.
+                    Production updates run automatically on a secure schedule. Manual controls are available only in the local operator environment.
                   </p>
                 </div>
               </div>

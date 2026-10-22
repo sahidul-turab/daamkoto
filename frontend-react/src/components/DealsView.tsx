@@ -65,7 +65,7 @@ export function DealsView({ onOpenProduct }: Props) {
           <div>
             <h1 className="text-xl font-bold">Daily Deals</h1>
             <p className="text-sm text-ink-3">
-              Biggest price drops across every retailer we track — updated after every scrape
+              Biggest price drops across every retailer we track — updated regularly
             </p>
           </div>
         </div>
@@ -114,7 +114,7 @@ export function DealsView({ onOpenProduct }: Props) {
           <TrendingDown className="mx-auto mb-3 h-10 w-10 text-ink-4" />
           <p className="text-sm text-ink-3">No price drops found yet.</p>
           <p className="mt-1 text-xs text-ink-4">
-            Run a scraper sweep to populate price history, then check back here.
+            Price-drop history is still being prepared. Check back after the next price update.
           </p>
         </div>
       )}

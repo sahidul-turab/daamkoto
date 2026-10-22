@@ -92,16 +92,18 @@ export function Header({
           >
             <Tag className="h-4 w-4" /> Deals
           </button>
-          <button
-            onClick={() => onViewChange("admin")}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors ${
-              view === "admin" ? "bg-brand-strong text-white" : "text-ink-3 hover:text-ink"
-            }`}
-            title={isAdmin ? "Owner dashboard" : "Owner sign in"}
-          >
-            <LockKeyhole className="h-4 w-4" /> Admin
-            {isAdmin && <span className="h-1.5 w-1.5 rounded-full bg-ok" />}
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => onViewChange("admin")}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors ${
+                view === "admin" ? "bg-brand-strong text-white" : "text-ink-3 hover:text-ink"
+              }`}
+              title="Owner dashboard"
+            >
+              <LockKeyhole className="h-4 w-4" /> Admin
+              <span className="h-1.5 w-1.5 rounded-full bg-ok" />
+            </button>
+          )}
         </div>
 
         {/* Search */}

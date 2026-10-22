@@ -50,7 +50,7 @@ export function PriceHistoryChart({ history }: { history: PricePoint[] }) {
   if (rows.length < 2) {
     return (
       <div className="grid h-48 place-items-center rounded-xl border border-dashed border-line text-sm text-ink-4">
-        Not enough history yet — prices are tracked on every scrape.
+        Not enough history yet — more observations will appear as prices are updated.
       </div>
     );
   }

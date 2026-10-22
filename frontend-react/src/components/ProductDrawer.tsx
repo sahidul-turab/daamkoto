@@ -274,7 +274,7 @@ export function ProductDrawer({
               </div>
 
               <div className="mb-6 rounded-xl border border-line bg-surface-2/55 px-4 py-3 text-xs leading-relaxed text-ink-3">
-                Prices are collected from retailer pages and may change before checkout. Bundle-only and listings not re-checked in 7 days are excluded from the best-price calculation.
+                Listed prices may change before checkout. Bundle-only and listings not re-checked in 7 days are excluded from the best-price calculation.
               </div>
 
               {/* Seller-specs disagreement panel */}
