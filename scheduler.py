@@ -162,6 +162,25 @@ def _finish_run(
 # Pipeline runner
 # ---------------------------------------------------------------------------
 
+# run_pipeline.py output lines meaning a retailer contributed nothing this run.
+# "[skip] No scraper for ..." is deliberately absent: that is planned coverage.
+_SKIP_PATTERNS = (
+    re.compile(r"\[warn\] 'Scrape (\w+) "),            # crashed or timed out
+    re.compile(r"Saved 0 records -> data[\\/]raw[\\/]([a-z]+)_"),
+    re.compile(r"\[skip\] No (\w+) \S+ raw file"),
+)
+
+
+def _skipped_retailers(output: str) -> list[str]:
+    found: list[str] = []
+    for pattern in _SKIP_PATTERNS:
+        for m in pattern.finditer(output):
+            name = m.group(1).lower()
+            if name not in found:
+                found.append(name)
+    return found
+
+
 def run_category(category: str, retailers: list[str], dry_run: bool = False,
                  no_cutouts: bool = False) -> bool:
     """Run the pipeline for one category. Returns True on success."""
@@ -209,6 +228,13 @@ def run_category(category: str, retailers: list[str], dry_run: bool = False,
             log.error("✗  FAILED: category=%s — %s", category, error_msg)
         else:
             success = True
+            # A retailer that crashed, timed out or came back empty does not fail
+            # the category, so name it — otherwise the run reads "SUCCESS" while
+            # whole shops go stale (Techland returned zero for 83 days unnoticed).
+            skipped = _skipped_retailers(out)
+            if skipped:
+                error_msg = "No data from: " + ", ".join(skipped)
+                log.warning("⚠  category=%s — %s", category, error_msg)
             m = re.search(r"Products\s+inserted\s*:\s*(\d+)", out)
             if m:
                 products_count = int(m.group(1))

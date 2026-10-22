@@ -51,12 +51,21 @@ ALL_RETAILERS = [
     "vibegaming",
 ]
 
+# One scraper hanging must not take the category down with it. Before this cap,
+# a scraper in the portable_hdd job hung every night until GitHub's 180-minute
+# job timeout cancelled the whole run — and with it every other retailer's
+# portable HDD prices, frozen since 23 Aug 2026. The slowest healthy scraper
+# (Techland keyboard, 76 pages) takes ~7 minutes.
+SCRAPER_TIMEOUT_SECONDS = 30 * 60
 
-def run(cmd: list[str], label: str, fatal: bool = True) -> bool:
+
+def run(cmd: list[str], label: str, fatal: bool = True,
+        timeout: float | None = None) -> bool:
     """
     Run a pipeline step. Returns True on success, False on failure.
     If fatal=True (default for match/load steps), exits the process on failure.
     If fatal=False (scraper/normalize steps), prints a warning and returns False.
+    A step still running after `timeout` seconds is killed and counts as failed.
     """
     python = sys.executable
     full_cmd = [python] + cmd
@@ -67,7 +76,12 @@ def run(cmd: list[str], label: str, fatal: bool = True) -> bool:
     # Child scripts print Unicode too; force UTF-8 in their stdio so they don't
     # die on cp1252 the way this script would.
     child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    result = subprocess.run(full_cmd, env=child_env)
+    sys.stdout.flush()
+    try:
+        result = subprocess.run(full_cmd, env=child_env, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        result = subprocess.CompletedProcess(full_cmd, returncode=124)
+        print(f"\n  [timeout] '{label}' still running after {timeout / 60:.0f} min — killed.")
     if result.returncode != 0:
         if fatal:
             print(f"\nPipeline aborted: '{label}' exited with code {result.returncode}.")
@@ -105,7 +119,8 @@ def scrape_and_normalize(retailer: str, cat: str, skip_scrape: bool, limit: int 
                 print(f"\n  [skip] No scraper for {retailer} {cat.upper()} — {scraper_path} not found.")
                 return None
             ok = run([f"scrapers/startech/scrape_{cat}.py", "--save"],
-                     f"Scrape StarTech {cat.upper()}", fatal=False)
+                     f"Scrape StarTech {cat.upper()}", fatal=False,
+                     timeout=SCRAPER_TIMEOUT_SECONDS)
             if not ok:
                 return None
             if cat == "ram":
@@ -117,7 +132,7 @@ def scrape_and_normalize(retailer: str, cat: str, skip_scrape: bool, limit: int 
         if cat == "ram":
             raw = latest("startech_ram_enriched_*.json", required=False)
         else:
-            raw = latest(f"startech_{cat}_*.json", required=False)
+            raw = latest(f"startech_{cat}_2*.json", required=False)
 
     else:
         if not skip_scrape:
@@ -125,12 +140,15 @@ def scrape_and_normalize(retailer: str, cat: str, skip_scrape: bool, limit: int 
                 print(f"\n  [skip] No scraper for {retailer} {cat.upper()} — {scraper_path} not found.")
                 return None
             ok = run([f"scrapers/{retailer}/scrape_{cat}.py", "--save"],
-                     f"Scrape {retailer.title()} {cat.upper()}", fatal=False)
+                     f"Scrape {retailer.title()} {cat.upper()}", fatal=False,
+                     timeout=SCRAPER_TIMEOUT_SECONDS)
             if not ok:
                 return None
-            raw = latest(f"{retailer}_{cat}_*.json", required=False)
+            # `_2*` (timestamps start with the year) keeps "casing" from
+            # matching casing_cooler files.
+            raw = latest(f"{retailer}_{cat}_2*.json", required=False)
         else:
-            raw = latest(f"{retailer}_{cat}_*.json", required=False)
+            raw = latest(f"{retailer}_{cat}_2*.json", required=False)
 
     if raw is None:
         print(f"\n  [skip] No {retailer} {cat.upper()} raw file — skipping.")
