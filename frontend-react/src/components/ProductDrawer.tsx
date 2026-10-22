@@ -226,7 +226,9 @@ export function ProductDrawer({
                                 <span className="text-ink-4">
                                   {l.stock_status === "upcoming"
                                     ? "Upcoming"
-                                    : "Out of stock"}
+                                    : l.stock_status === "stale"
+                                      ? "Not re-checked in 7+ days"
+                                      : "Out of stock"}
                                 </span>
                               )}
                             </div>

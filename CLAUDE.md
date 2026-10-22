@@ -21,7 +21,7 @@ Also stores price history (append-only timestamps) so users can see how prices c
 (https://daamkoto-api.onrender.com), database on Neon. Scrapers run daily from
 GitHub Actions. Everything is free tier.
 
-**Scale today:** ~35,150 canonical products · ~146,000 price rows · 15 retailers
+**Scale today:** ~35,150 canonical products · ~1.45 million price rows (656 MB, growing nightly) · 15 retailers
 · 24 live categories.
 
 ---
@@ -122,9 +122,13 @@ Endpoints:
 
 19 endpoints total, plus a `/media` StaticFiles mount for locally-served cutouts.
 
-**AI providers** (`backend/llm.py`) — Groq `llama-3.3-70b-versatile` (fast lane)
-and Google Gemini `gemini-2.0-flash` (reasoning lane), both free tier, with
-automatic fallback. **This project does not use the Anthropic API.**
+**AI providers** (`backend/llm.py`) — Groq (fast lane: first live model in
+`GROQ_MODELS`, default `openai/gpt-oss-120b` → `qwen/qwen3.8-27b` →
+`openai/gpt-oss-20b`) and Google Gemini `GEMINI_MODEL` (reasoning lane), both
+free tier, each falling back to the other. Free providers retire models without
+notice — Groq dropped `llama-3.3-70b-versatile` in 2026 and `/chat` returned 500
+until the list existed. Swap models via those env vars on Render, no deploy.
+**This project does not use the Anthropic API.**
 
 The agent (`backend/agent.py`) may only speak through six tools in
 `backend/tools.py`: `search_products`, `get_product_details`, `get_price_history`,
@@ -285,7 +289,7 @@ in round-robin order.
 | Frontend | React 18 + Vite 6 + Tailwind CSS v4 |
 | Charts | Recharts |
 | Animations | Framer Motion |
-| AI agent | Groq llama-3.3-70b (fast) + Gemini 2.0 Flash (reasoning) — both free |
+| AI agent | Groq gpt-oss-120b (fast) + Gemini (reasoning) — both free, env-configurable |
 | 3D rig preview | three.js + @react-three/fiber + drei |
 | Icons | lucide-react |
 | Background removal | rembg (product image cutouts) |

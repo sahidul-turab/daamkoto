@@ -177,6 +177,7 @@ _ALL_RUN_CATEGORIES = {
 # real request ever asks for, leaving every visitor on the slow path.
 _WARM_PAGE_SIZE = 20
 _WARM_SORTS = ("store_count_desc", "price_asc")
+_WARM_DEALS_LIMIT = 30  # must match `limit` in frontend-react/src/components/DealsView.tsx
 
 
 def _warm_product_page(conn, category: str, sort: str) -> dict:
@@ -215,6 +216,13 @@ def _warm_caches() -> None:
                     )
                 brands_cache.warm(brands_cache.make_key(cat),
                                   lambda c=cat: queries.get_brands(conn, category=c))
+
+            # The Deals tab's default request (DealsView: no category, limit 30).
+            deals_cache.warm(
+                deals_cache.make_key(None, _WARM_DEALS_LIMIT),
+                lambda: {"deals": (d := queries.get_deals(conn, limit=_WARM_DEALS_LIMIT)),
+                         "count": len(d)},
+            )
         _log.info("Cache warmup complete (%d categories)", len(_WARM_CATEGORIES))
     except Exception as exc:
         _log.warning("Cache warmup skipped: %s", exc)

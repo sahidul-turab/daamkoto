@@ -4,7 +4,7 @@ export interface Listing {
   retailer: string;
   price_bdt: number | null;
   in_stock: boolean;
-  stock_status: "in_stock" | "out_of_stock" | "upcoming" | "bundle_only" | string;
+  stock_status: "in_stock" | "out_of_stock" | "upcoming" | "bundle_only" | "stale" | string;
   pc_bundle_only: boolean;
   product_url: string | null;
   image_url?: string | null;

@@ -2,15 +2,15 @@
 Provider-agnostic LLM wrapper for DaamKoto's AI assistant.
 
 Supported free tiers:
-  - "fast"   → Groq llama-3.3-70b-versatile   (fast tool-calling, low latency)
-  - "reason" → Google Gemini gemini-2.0-flash  (stronger multi-step reasoning)
+  - "fast"   → Groq, first live model in GROQ_MODELS (fast tool-calling)
+  - "reason" → Google Gemini GEMINI_MODEL       (stronger multi-step reasoning)
 
 Both are normalised to the same return shape:
   (text: str, tool_calls: list[ToolCall])
 
 where ToolCall = {"name": str, "arguments": dict, "id": str}
 
-If the "reason" model's API key is missing, it automatically falls back to "fast".
+Each tier falls back to the other provider when its own fails.
 """
 
 from __future__ import annotations
@@ -221,12 +221,65 @@ def _deep_convert(obj: Any) -> Any:
 # Public API
 # ---------------------------------------------------------------------------
 
-# Model IDs (change here if you want to swap versions)
-GROQ_MODEL = "llama-3.3-70b-versatile"
-GEMINI_MODEL = "gemini-2.0-flash"
+# Model IDs, tried in order. Free-tier providers retire models without notice:
+# Groq dropped llama-3.3-70b-versatile in 2026 and every /chat request failed
+# with model_not_found until this became a list. Override without a deploy via
+# GROQ_MODELS (comma-separated) / GEMINI_MODEL in the host's environment.
+GROQ_MODELS = [m.strip() for m in os.getenv(
+    "GROQ_MODELS", "openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b"
+).split(",") if m.strip()]
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 # Cache Gemini availability — once it fails auth, skip it for the process lifetime
 _gemini_auth_ok: bool | None = None  # None = untested, True = works, False = auth failed
+
+# Groq models found retired this process; skipped instead of re-tried per request.
+_groq_dead: set[str] = set()
+
+
+def _is_missing_model(err: str) -> bool:
+    err = err.lower()
+    return ("model_not_found" in err or "decommissioned" in err
+            or "does not exist" in err or "404" in err)
+
+
+def _try_gemini(messages, tools, max_tokens, temperature) -> LLMResult | None:
+    """Gemini, or None when it is unconfigured, known-bad, or fails this time."""
+    global _gemini_auth_ok
+    if not os.getenv("GEMINI_API_KEY") or _gemini_auth_ok is False:
+        return None
+    try:
+        result = _gemini_complete(messages, tools, GEMINI_MODEL, max_tokens, temperature)
+        _gemini_auth_ok = True  # mark as working
+        return result
+    except Exception as exc:
+        err_str = str(exc)
+        if ("401" in err_str or "UNAUTHENTICATED" in err_str or "ACCESS_TOKEN" in err_str
+                or "API_KEY_INVALID" in err_str or _is_missing_model(err_str)):
+            # Auth failure or retired model — disable Gemini for this process
+            _gemini_auth_ok = False
+            print(f"[llm] Gemini unusable ({err_str[:120]}) — disabling for this session")
+        else:
+            print(f"[llm] Gemini failed ({exc})")
+        return None
+
+
+def _try_groq(messages, tools, max_tokens, temperature) -> LLMResult:
+    """First Groq model that answers; raises the last error if none does."""
+    last: Exception | None = None
+    for model in GROQ_MODELS:
+        if model in _groq_dead:
+            continue
+        try:
+            return _groq_complete(messages, tools, model, max_tokens, temperature)
+        except Exception as exc:
+            last = exc
+            if _is_missing_model(str(exc)):
+                _groq_dead.add(model)
+                print(f"[llm] Groq model {model} unavailable — trying the next one")
+                continue
+            raise
+    raise last or RuntimeError("No Groq model configured (GROQ_MODELS is empty).")
 
 
 def complete(
@@ -250,24 +303,20 @@ def complete(
     Returns:
         LLMResult with .text and .tool_calls.
     """
-    global _gemini_auth_ok
-    if model_tier == "reason" and os.getenv("GEMINI_API_KEY") and _gemini_auth_ok is not False:
-        try:
-            result = _gemini_complete(messages, tools, GEMINI_MODEL, max_tokens, temperature)
-            _gemini_auth_ok = True  # mark as working
+    if model_tier == "reason":
+        result = _try_gemini(messages, tools, max_tokens, temperature)
+        if result is not None:
             return result
-        except Exception as exc:
-            err_str = str(exc)
-            if "401" in err_str or "UNAUTHENTICATED" in err_str or "ACCESS_TOKEN" in err_str:
-                # Auth failure — disable Gemini for this process to avoid repeated retries
-                _gemini_auth_ok = False
-                print("[llm] Gemini auth failed — disabling for this session, using Groq only")
-            else:
-                print(f"[llm] Gemini failed ({exc}), falling back to Groq")
 
     try:
-        return _groq_complete(messages, tools, GROQ_MODEL, max_tokens, temperature)
+        return _try_groq(messages, tools, max_tokens, temperature)
     except Exception as exc:
+        # Groq is down, rate-limited or out of models: Gemini is the fallback for
+        # the fast tier too, so one provider's outage doesn't take /chat down.
+        if model_tier != "reason":
+            result = _try_gemini(messages, tools, max_tokens, temperature)
+            if result is not None:
+                return result
         err = str(exc)
         if "429" in err or "rate_limit" in err.lower() or "rate limit" in err.lower():
             raise RuntimeError(

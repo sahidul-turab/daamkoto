@@ -106,9 +106,21 @@ def _spec_clause(key: str, value) -> tuple[str | None, list]:
 # Shared CTE — used by multiple queries
 # ---------------------------------------------------------------------------
 
-_CURRENT_PRICES_CTE = """
+# A listing not re-seen for STALE_LISTING_DAYS stays visible but stops counting
+# as in stock (stock_status 'stale'), so it can never be a product's headline
+# price, the drawer's "Best" seller, or pass an in-stock filter. mv_current_prices
+# deliberately keeps a broken scraper's listings (migration v8); without this, a
+# shop whose scraper died showed its last prices as current — Techland's
+# 83-day-old prices were the headline price on 478 products in Oct 2026.
+STALE_LISTING_DAYS = 7
+
+_CURRENT_PRICES_CTE = f"""
 WITH current_prices AS (
-    SELECT m.product_id, m.retailer, m.price_bdt, m.in_stock, m.stock_status,
+    SELECT m.product_id, m.retailer, m.price_bdt,
+           CASE WHEN m.scraped_at < NOW() - INTERVAL '{STALE_LISTING_DAYS} days'
+                THEN FALSE ELSE m.in_stock END AS in_stock,
+           CASE WHEN m.scraped_at < NOW() - INTERVAL '{STALE_LISTING_DAYS} days'
+                THEN 'stale' ELSE m.stock_status END AS stock_status,
            m.pc_bundle_only, m.product_url, m.image_url,
            ic.cutout_path AS image_cutout, m.scraped_at
     FROM mv_current_prices m
@@ -430,16 +442,31 @@ def get_categories(conn) -> list[str]:
 
 
 def get_brands(conn, category: str | None = None) -> list[str]:
+    """
+    One entry per brand, case-insensitively, spelled the way most products
+    spell it. Retailers disagree on case ("AFOX" vs "Afox"), and the brand
+    filter already matches LOWER(brand), so listing both only showed the same
+    brand twice. Names not starting with a letter or digit are title fragments
+    the brand extractor caught ("(Bundle"), not brands.
+    """
+    where = "brand IS NOT NULL AND brand ~ '^[[:alnum:]]'"
+    params: tuple = ()
     if category:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT DISTINCT brand FROM products WHERE UPPER(category) = UPPER(%s) AND brand IS NOT NULL ORDER BY brand",
-                (category,),
-            )
-            return [r[0] for r in cur.fetchall()]
+        where += " AND UPPER(category) = UPPER(%s)"
+        params = (category,)
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL ORDER BY brand"
+            f"""
+            SELECT brand FROM (
+                SELECT DISTINCT ON (LOWER(brand)) brand
+                FROM products
+                WHERE {where}
+                GROUP BY brand
+                ORDER BY LOWER(brand), COUNT(*) DESC, brand
+            ) b
+            ORDER BY LOWER(brand)
+            """,
+            params,
         )
         return [r[0] for r in cur.fetchall()]
 
@@ -673,6 +700,11 @@ def get_deals(
     matcher rightly folds them into one canonical product. Comparing by
     (product, retailer) alone then picks whichever listing was scraped last as
     the "previous" price and reports a 75% crash that never happened.
+
+    The previous price is one LATERAL index probe per current listing on
+    idx_prices_current (product_id, retailer_id, scraped_at DESC). The old
+    DISTINCT ON sorted the whole price history and took ~117 s at 1.45M rows,
+    past the frontend's timeout; the history only grows, so keep it a probe.
     """
     where_sql = ""
     params: list = []
@@ -684,28 +716,11 @@ def get_deals(
 
     query = f"""
         WITH current AS (
-            SELECT product_id, retailer, product_url, price_bdt, scraped_at
-            FROM mv_current_prices
-            WHERE price_bdt IS NOT NULL
-        ),
-        previous AS (
-            SELECT DISTINCT ON (pr.product_id, r.name, pr.product_url)
-                pr.product_id,
-                r.name         AS retailer,
-                pr.product_url,
-                pr.price_bdt   AS prev_price,
-                pr.scraped_at
-            FROM prices pr
-            JOIN retailers r ON r.id = pr.retailer_id
-            -- Joining to `current` pins the comparison to the same listing and
-            -- replaces the old correlated MAX() subquery.
-            JOIN current c
-              ON  c.product_id  = pr.product_id
-              AND c.retailer    = r.name
-              AND c.product_url IS NOT DISTINCT FROM pr.product_url
-            WHERE pr.price_bdt IS NOT NULL
-              AND pr.scraped_at < c.scraped_at
-            ORDER BY pr.product_id, r.name, pr.product_url, pr.scraped_at DESC
+            SELECT c.product_id, c.retailer, r.id AS retailer_id,
+                   c.product_url, c.price_bdt, c.scraped_at
+            FROM mv_current_prices c
+            JOIN retailers r ON r.name = c.retailer
+            WHERE c.price_bdt IS NOT NULL
         ),
         drops AS (
             SELECT
@@ -718,7 +733,18 @@ def get_deals(
                      THEN ROUND(((prev.prev_price - c.price_bdt) / prev.prev_price) * 100, 1)
                      ELSE 0 END AS drop_pct
             FROM current c
-            JOIN previous prev USING (product_id, retailer, product_url)
+            -- Same listing's newest earlier observation.
+            CROSS JOIN LATERAL (
+                SELECT pr.price_bdt AS prev_price
+                FROM prices pr
+                WHERE pr.product_id  = c.product_id
+                  AND pr.retailer_id = c.retailer_id
+                  AND pr.product_url IS NOT DISTINCT FROM c.product_url
+                  AND pr.price_bdt IS NOT NULL
+                  AND pr.scraped_at < c.scraped_at
+                ORDER BY pr.scraped_at DESC
+                LIMIT 1
+            ) prev
             WHERE c.price_bdt < prev.prev_price
         )
         SELECT
